@@ -125,13 +125,20 @@ than length, which is the number H5 actually rests on.
 No dependencies for the core. Standard library only.
 
 ```bash
-git clone <your-repo> && cd judge-redteam
+git clone https://github.com/richardgshen-hub/judge-redteam && cd judge-redteam
 python3 -m pip install -e ".[dev]"
 
-python3 scripts/selfcheck.py        # calibrate the instrument
+python3 scripts/demo.py             # no API key, ~6s -> results/demo_report.md
+python3 scripts/validate_items.py data/items.jsonl --strict  # gate the item pool
+python3 scripts/selfcheck.py        # calibrate the instrument (~26s)
 python3 scripts/power_analysis.py   # how many items do you actually need
-python3 -m pytest tests/ -q         # 34 tests
+python3 -m pytest tests/ -q         # 37 tests
 ```
+
+`demo.py` runs against a judge with deliberately injected bias, so it shows the
+full reporting path — tables, effect sizes, noise floor, disclosure card — without
+costing anything or requiring a key. The numbers in its output describe the
+simulated judge, not any real model.
 
 Against real judges:
 
