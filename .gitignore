@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+
+.pytest_cache/
+.coverage
+htmlcov/
+
+.DS_Store
+.idea/
+.vscode/
+
+# Candidate items that have not passed audit or human review yet.
+data/candidates.jsonl
+data/accepted.jsonl
+
+# Raw run artifacts: one run is ~6k records with full candidate text. Regenerate
+# them locally and ship them alongside a write-up, not inside the repo. The
+# markdown reports are small and are kept as worked examples.
+results/*.jsonl
+results/*.json
