@@ -3,9 +3,37 @@
 Everything here is pure-Python and seeded, so results are bit-reproducible and
 the whole module is unit-testable without any model access. That is deliberate:
 the statistics must be verifiable independently of the judges.
+
+Analysis unit
+-------------
+The preregistered analysis unit is the *item*, not the replicate. Item i is
+scored with R replicate calls (same question, temperature > 0). Those R verdicts
+are correlated observations of one thing, not R independent facts. Any inference
+that resamples individual verdicts or feeds the pooled (B, C) discordant counts
+into a plain McNemar test overstates confidence, because it treats R correlated
+rows as R independent rows.
+
+The headline test therefore resamples whole items (clusters) and recomputes the
+signed discrepancy each time. See `cluster_permutation_p` and `summarise_axis`.
+
+Open review
+-----------
+The cluster-permutation test is implemented and simulation-calibrated (see
+tests/test_stats.py), but the method has NOT been signed off by a statistician.
+STATS_REVIEW_NOTE below records exactly what is proven and what is not. Treat
+any real-model finding as provisional until a stats reviewer has looked at it.
 """
 
 from __future__ import annotations
+
+# What is proven by simulation vs what still needs a human statistician.
+# Kept here so the README and the report can cite the same single source.
+STATS_REVIEW_NOTE = (
+    "Cluster-permutation inference (item-level resampling) is simulation-calibrated "
+    "for false-positive rate under the null, for power under a known bias, and for "
+    "perfectly-correlated replicates. It has NOT been formally reviewed by a "
+    "statistician; real-model findings are provisional pending that review."
+)
 
 import math
 import random
@@ -112,6 +140,48 @@ def paired_bootstrap_diff_ci(
     return (lo, hi)
 
 
+def cluster_permutation_p(
+    cells: Sequence[PairedOutcome],
+    n_resample: int = 10_000,
+    seed: int = 20260830,
+) -> tuple[float, int]:
+    """Item-cluster-aware permutation test of net directional bias.
+
+    The analysis unit is the *item*, not the replicate. The R replicate calls of
+    one item are correlated, so they do not supply R independent flips. We keep
+    each item's total discordance (b_i + c_i) as a single cluster but randomize
+    its *direction* under the null -- exactly what a fair-coin flip of each
+    item's verdict would do. Resampling whole items instead (keeping their
+    realized directions) would re-center the null on the observed value and
+    never reject, which is why direction, not item identity, is permuted.
+
+    Under H0 there is no systematic direction bias, so the observed signed
+    discrepancy D = sum_i sign_i (b_i - c_i) should be typical of the
+    sign-permuted distribution. p is the fraction of permutations at least as
+    extreme, with a +1 / (n+1) correction.
+
+    Returns (p_value, observed_signed_discrepancy).
+    """
+    if not cells:
+        return 1.0, 0
+    mags = [c.b + c.c for c in cells]
+    if sum(mags) == 0:
+        return 1.0, 0
+    signs = [1 if c.b >= c.c else -1 for c in cells]
+    d_obs = sum(s * m for s, m in zip(signs, mags))
+    rng = random.Random(seed)
+    k = len(cells)
+    count = 0
+    for _ in range(n_resample):
+        d = 0
+        for i in range(k):
+            s = 1 if rng.random() < 0.5 else -1
+            d += s * mags[i]
+        if abs(d) >= abs(d_obs):
+            count += 1
+    return (count + 1) / (n_resample + 1), d_obs
+
+
 # --------------------------------------------------------------------------
 # multiple comparisons
 # --------------------------------------------------------------------------
@@ -212,6 +282,7 @@ class AxisResult:
     p_mcnemar: float
     cohens_h: float
     h_ci: tuple[float, float]
+    n_items: int = 0
     meta: MetaResult | None = None
     noise_floor: float = 0.0
     noise_ci: tuple[float, float] = (float("nan"), float("nan"))
@@ -237,11 +308,15 @@ def summarise_axis(
     unperturbed repeats. They establish the floor that a real effect must clear.
     """
     n = sum(x.n for x in cells)
+    n_items = len(cells)
     b = sum(x.b for x in cells)
     c = sum(x.c for x in cells)
     agg = PairedOutcome(n=n, b=b, c=c)
 
-    p = mcnemar_exact(b, c)
+    # Item-cluster-aware: resample whole items, not individual replicates, so the
+    # R correlated calls per item do not inflate significance. (Previously this
+    # fed the pooled (b, c) into mcnemar_exact, which assumes independence.)
+    p, _ = cluster_permutation_p(cells)
     h = cohens_h(agg.p_flip_wrong, agg.p_flip_right)
 
     clusters = [[1.0] * x.b + [-1.0] * x.c + [0.0] * (x.n - x.b - x.c) for x in cells]
@@ -288,6 +363,7 @@ def summarise_axis(
         axis=axis,
         hypothesis=hypothesis,
         n_pairs=n,
+        n_items=n_items,
         b=b,
         c=c,
         net_bias=agg.net_bias,
@@ -302,6 +378,7 @@ def summarise_axis(
         noise_ci=noise_ci,
         above_noise=above_noise,
         confirmatory=confirmatory,
+        extra={"method": "cluster-permutation", "n_resample": 10_000},
     )
 
 
@@ -338,10 +415,12 @@ __all__ = [
     "cohens_h_var",
     "cluster_bootstrap_ci",
     "paired_bootstrap_diff_ci",
+    "cluster_permutation_p",
     "holm_bonferroni",
     "dersimonian_laird",
     "MetaResult",
     "AxisResult",
     "summarise_axis",
     "apply_correction",
+    "STATS_REVIEW_NOTE",
 ]
