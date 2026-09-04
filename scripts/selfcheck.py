@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 from jrt.judges import BiasProfile, SimulatedJudge  # noqa: E402
 from jrt.report import results_table  # noqa: E402
 from jrt.runner import Experiment, RunConfig  # noqa: E402
-from jrt.stats import cohens_h, holm_bonferroni, mcnemar_exact  # noqa: E402
+from jrt.stats import binom_pmf, cohens_h, holm_bonferroni, mcnemar_exact  # noqa: E402
 
 ITEMS = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "items.jsonl"
@@ -133,8 +133,29 @@ def evaluate_negative(cond: dict) -> list[tuple[str, bool, str]]:
     return out
 
 
+def _binomial_upper_bound(n: int, p: float, confidence: float = 0.95) -> int:
+    """Largest rejection count still consistent with a calibrated test.
+
+    Smallest k whose Binom(n, p) CDF reaches `confidence`; observing more
+    rejections than that is unlikely enough to suspect miscalibration.
+    """
+    cum = 0.0
+    for k in range(n + 1):
+        cum += binom_pmf(k, n, p)
+        if cum >= confidence:
+            return k
+    return n
+
+
 def check_false_positive_rate(conds: Sequence[dict]) -> list[tuple[str, bool, str]]:
-    """Aggregate across seeds: the family-wise rejection rate under the null."""
+    """Aggregate across seeds: the family-wise rejection rate under the null.
+
+    The gate is the acceptance region of Binom(n_tests, alpha), not the point
+    estimate. With 24 tests at alpha = 0.05 a *perfectly* calibrated instrument
+    still produces two or more false positives about a third of the time, so
+    demanding a point estimate <= 5% would fail a correct test routinely —
+    a gate that flaky tests the gate, not the instrument.
+    """
     total = rejected = 0
     per = []
     for c in conds:
@@ -144,11 +165,13 @@ def check_false_positive_rate(conds: Sequence[dict]) -> list[tuple[str, bool, st
         rejected += k
         per.append(f"{k}/{n}")
     rate = rejected / total if total else 0.0
+    allowed = _binomial_upper_bound(total, 0.05)
     return [
         (
             "family-wise false positive rate under zero bias",
-            rate <= 0.05,
-            f"{'/'.join(per)} -> {rejected}/{total} = {rate:.1%} (target <= 5%)",
+            rejected <= allowed,
+            f"{'/'.join(per)} -> {rejected}/{total} = {rate:.1%} "
+            f"(calibrated-test acceptance region at alpha=0.05: <= {allowed}/{total})",
         )
     ]
 

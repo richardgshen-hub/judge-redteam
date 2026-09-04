@@ -144,6 +144,22 @@ recognises its own outputs — a claim this design makes no measurement of.
 
 **Timing:** before outcome data existed.
 
+## Amendment 7 (2026-08-30, v0.2 hardening) — recorded before any real-judge data collection
+
+**Changed:** the selfcheck's false-positive gate criterion, from a point-estimate
+threshold (rejection rate ≤ 5%) to the acceptance region of
+Binom(n_tests, alpha) at 95% confidence (≤ 3 rejections out of 24 at α = 0.05).
+
+**Why:** the old gate was statistically incoherent. With 24 tests at α = 0.05, a
+*perfectly* calibrated test produces two or more false positives about a third of
+the time — the gate failed its own instrument for reasons that had nothing to do
+with calibration. A gate that flaky measures the gate, not the instrument. After
+the switch to item-cluster inference (Amendment 5), the unbiased simulated judge
+showed 2/24 = 8.3%, inside the acceptance region, with all eight primary-seed
+family-wise tests silent.
+
+**Timing:** before outcome data existed.
+
 ## Template
 
 ```
