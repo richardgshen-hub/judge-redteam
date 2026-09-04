@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import random
 
+import pytest
+
 from jrt.stats import cluster_permutation_p, mcnemar_exact, summarise_axis
 from jrt.types import PairedOutcome
 
@@ -109,3 +111,57 @@ def test_summarise_axis_no_discordance_is_not_significant():
     ]
     res = summarise_axis("length", "hyp", cells)
     assert res.p_mcnemar == 1.0
+
+
+def _paired(cells, noise, axis="position", hyp="Perturbation hurts", confirmatory=True):
+    return summarise_axis(axis, hyp, cells, noise_cells=noise, confirmatory=confirmatory)
+
+
+def test_noise_floor_is_wrong_direction_rate_not_total():
+    # Each item: perturbation flips 50% toward wrong; noise flips 10% toward wrong
+    # but 50% toward right. The reported noise floor must be the 10% wrong rate,
+    # not the 60% total self-disagreement rate.
+    cells = [PairedOutcome(n=20, b=10, c=2, item_id=f"i{j}") for j in range(5)]
+    noise = [PairedOutcome(n=20, b=2, c=10, item_id=f"i{j}") for j in range(5)]
+    res = _paired(cells, noise)
+    assert res.noise_floor == 0.1
+    assert res.noise_self_disagreement == pytest.approx(0.6)
+
+
+def test_above_noise_true_when_perturbation_exceeds_floor():
+    cells = [PairedOutcome(n=20, b=15, c=1, item_id=f"i{j}") for j in range(5)]
+    noise = [PairedOutcome(n=20, b=2, c=10, item_id=f"i{j}") for j in range(5)]
+    res = _paired(cells, noise)
+    assert res.noise_floor == pytest.approx(0.1)
+    assert res.above_noise is True
+
+
+def test_above_noise_false_when_equal_to_floor():
+    # Boundary: perturbation wrong-rate equals the noise wrong-rate -> not above.
+    cells = [PairedOutcome(n=20, b=10, c=10, item_id=f"i{j}") for j in range(5)]
+    noise = [PairedOutcome(n=20, b=10, c=10, item_id=f"i{j}") for j in range(5)]
+    res = _paired(cells, noise)
+    assert res.noise_floor == pytest.approx(0.5)
+    assert res.above_noise is False
+
+
+def test_above_noise_false_when_below_floor():
+    cells = [PairedOutcome(n=20, b=2, c=10, item_id=f"i{j}") for j in range(5)]
+    noise = [PairedOutcome(n=20, b=10, c=2, item_id=f"i{j}") for j in range(5)]
+    res = _paired(cells, noise)
+    assert res.above_noise is False
+
+
+def test_significant_but_below_noise_is_not_confirmed():
+    # Strong net (p significant) but the perturbation's wrong-rate is below the
+    # judge's own spontaneous wrong-rate: it must NOT be reported as a finding.
+    cells = [PairedOutcome(n=20, b=16, c=2, item_id=f"i{j}") for j in range(6)]
+    noise = [PairedOutcome(n=20, b=20, c=0, item_id=f"i{j}") for j in range(6)]
+    res = _paired(cells, noise)
+    assert res.p_mcnemar < 0.05
+    assert res.above_noise is False
+    from jrt.stats import apply_correction
+
+    out = apply_correction([res])
+    assert "BELOW noise floor" in out[0].verdict
+    assert out[0].verdict != "systematic bias confirmed"

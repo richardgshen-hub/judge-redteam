@@ -46,7 +46,7 @@ def _fmt_ci(ci: tuple[float, float]) -> str:
 def results_table(results: Sequence[AxisResult]) -> str:
     head = (
         "| Axis | Hyp | pairs | P(→wrong) | P(→right) | net bias | Cohen h | 95% CI | p | p_adj "
-        "| noise floor | verdict |\n"
+        "| noise ▸wrong | verdict |\n"
         "|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---|"
     )
     rows = [head]
@@ -143,10 +143,18 @@ def write_report(
     lines += [
         "## Notes",
         "",
-        "- p-values are two-sided exact McNemar on discordant pairs.",
-        "- p_adj is Holm–Bonferroni across the confirmatory hypotheses in this run.",
-        "- An axis flagged *below noise floor* flipped fewer verdicts than the judge "
-        "flips on its own between two unperturbed repeats; it is not reported as a finding.",
+        "- p-values are item-cluster permutation tests (each item's total discordance "
+        "is one cluster; direction is randomized under the null). See `stats.STATS_REVIEW_NOTE`.",
+        "- p_adj is Holm–Bonferroni across the confirmatory hypotheses in this run only.",
+        "- **Noise floor** in the table is the *wrong-direction self-flip rate*: how often the "
+        "judge flips a correct verdict to a wrong one between two identical, unperturbed "
+        "repeats (noise_a vs noise_b). A perturbation is only called a finding when its own "
+        "P(correct→wrong) clearly exceeds this baseline.",
+        "- The *total* self-disagreement rate (any flip, either direction) is larger and is "
+        "recorded separately in the JSON summary as `noise_self_disagreement`; it is not used "
+        "for the above-noise decision.",
+        "- An axis flagged *below noise floor* flipped fewer verdicts toward wrong than the "
+        "judge does on its own; it is not reported as a finding even if p < alpha.",
         "- Null results carry the same weight as positive ones and are retained.",
     ]
     with open(path, "w", encoding="utf-8") as fh:

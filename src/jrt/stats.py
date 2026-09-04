@@ -285,6 +285,7 @@ class AxisResult:
     n_items: int = 0
     meta: MetaResult | None = None
     noise_floor: float = 0.0
+    noise_self_disagreement: float = 0.0
     noise_ci: tuple[float, float] = (float("nan"), float("nan"))
     above_noise: bool | None = None
     p_adjusted: float = 1.0
@@ -327,15 +328,26 @@ def summarise_axis(
     meta = dersimonian_laird(effects, variances)
 
     noise_floor = 0.0
+    noise_self_disagreement = 0.0
     noise_ci: tuple[float, float] = (float("nan"), float("nan"))
     above_noise: bool | None = None
     if noise_cells:
         nn = sum(x.n for x in noise_cells)
         nb = sum(x.b for x in noise_cells)
         nc = sum(x.c for x in noise_cells)
-        noise_floor = (nb + nc) / nn if nn else 0.0
+        # Two distinct quantities, reported separately so the reader knows which
+        # is being compared:
+        #   noise_floor            = wrong-direction self-flip rate (b/nn). This is
+        #                           the baseline rate at which the judge destroys a
+        #                           *correct* verdict with no perturbation. A real
+        #                           effect must push past THIS, not past the total.
+        #   noise_self_disagreement = total flip rate (b+c)/nn: the judge merely
+        #                           changes its mind between two identical prompts,
+        #                           in either direction. Informational only.
+        noise_floor = nb / nn if nn else 0.0
+        noise_self_disagreement = (nb + nc) / nn if nn else 0.0
 
-        # Is the perturbation worse than the judge's own self-disagreement?
+        # Is the perturbation worse than the judge's own wrong-direction rate?
         # Paired at item level: each item contributes a perturbed-condition
         # P(->wrong) and a noise-condition P(->wrong). If the bootstrap CI for
         # the difference sits entirely above zero, the perturbation destroys
@@ -351,13 +363,9 @@ def summarise_axis(
             noise_ci = paired_bootstrap_diff_ci(pairs, seed=20260831)
             above_noise = noise_ci[0] > 0.0
         else:
-            nclusters = [
-                [1.0] * x.b + [-1.0] * x.c + [0.0] * (x.n - x.b - x.c) for x in noise_cells
-            ]
-            noise_ci = cluster_bootstrap_ci(
-                nclusters, lambda flat: abs(sum(flat)) / len(flat) if flat else 0.0, seed=20260831
-            )
-            above_noise = agg.p_flip_wrong > noise_ci[1]
+            # No shared items: compare aggregate wrong-direction rates directly.
+            noise_ci = (noise_floor, noise_floor)
+            above_noise = agg.p_flip_wrong > noise_floor
 
     return AxisResult(
         axis=axis,
@@ -375,6 +383,7 @@ def summarise_axis(
         h_ci=h_ci,
         meta=meta,
         noise_floor=noise_floor,
+        noise_self_disagreement=noise_self_disagreement,
         noise_ci=noise_ci,
         above_noise=above_noise,
         confirmatory=confirmatory,
