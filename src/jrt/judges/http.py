@@ -2,34 +2,97 @@
 
 Standard library only — no requests/httpx dependency, so the package installs
 clean and runs anywhere.
+
+Failure handling
+----------------
+Transient failures (HTTP 429, 5xx, timeouts) are retried with capped exponential
+backoff inside `_post`; permanent failures (401, 400, malformed bodies) fail
+immediately. Error strings are scrubbed through `redact_secrets` before they are
+attached to a RawCompletion, so an API key can never leak into stored data.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import socket
 import time
 import urllib.error
 import urllib.request
 
 from .base import Judge, RawCompletion
 
+# 429 and the 5xx codes that LLM gateways actually emit under load. 401/403 are
+# permanent (retrying cannot fix a bad key) and are deliberately excluded.
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+_MAX_SLEEP_SECONDS = 30.0
 
-def _post(url: str, payload: dict, headers: dict[str, str], timeout: float) -> tuple[dict, str]:
+# Patch point for tests. Production code uses urllib directly.
+_urlopen = urllib.request.urlopen
+
+
+def redact_secrets(text: str, secrets) -> str:
+    """Scrub secret values out of an error string.
+
+    Error bodies and exception messages get stored next to the data. If a proxy
+    or a misconfigured gateway ever echoes credentials back, this keeps them out
+    of the persisted record.
+    """
+    for s in secrets:
+        if s and s in text:
+            text = text.replace(s, "[redacted]")
+    return text
+
+
+def _is_transient_exception(exc: Exception) -> bool:
+    """True for timeouts — the one non-HTTP failure worth another attempt."""
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
+    reason = getattr(exc, "reason", None)
+    return isinstance(reason, (TimeoutError, socket.timeout))
+
+
+def _post(
+    url: str,
+    payload: dict,
+    headers: dict[str, str],
+    timeout: float,
+    max_retries: int = 3,
+    backoff: float = 1.5,
+    sleep=None,
+) -> tuple[dict, str]:
+    """POST JSON with capped exponential backoff on transient failures.
+
+    Retries: 429, 5xx gateway errors, and timeouts. Fails immediately on auth
+    errors and malformed bodies — those will not get better by waiting.
+    `sleep` is injectable so tests can run without real delays; resolved at call
+    time (not definition time) so tests can monkeypatch it.
+    """
+    if sleep is None:
+        sleep = time.sleep
     data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8")), ""
-    except urllib.error.HTTPError as exc:
-        body = ""
+    last_err = ""
+    for attempt in range(max_retries):
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
         try:
-            body = exc.read().decode("utf-8")[:400]
-        except Exception:
-            pass
-        return {}, f"HTTP {exc.code}: {body}"
-    except Exception as exc:  # network, DNS, timeout
-        return {}, f"{type(exc).__name__}: {exc}"
+            with _urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8")), ""
+        except urllib.error.HTTPError as exc:
+            body = ""
+            try:
+                body = exc.read().decode("utf-8")[:400]
+            except Exception:
+                pass
+            last_err = f"HTTP {exc.code}: {body}"
+            if exc.code not in _RETRYABLE_STATUS:
+                return {}, last_err
+        except Exception as exc:  # network, DNS, timeout
+            last_err = f"{type(exc).__name__}: {exc}"
+            if not _is_transient_exception(exc):
+                return {}, last_err
+        if attempt < max_retries - 1:
+            sleep(min(_MAX_SLEEP_SECONDS, backoff * (2**attempt)))
+    return {}, last_err
 
 
 class OllamaJudge(Judge):
@@ -45,7 +108,13 @@ class OllamaJudge(Judge):
         timeout: float = 120.0,
         **kwargs,
     ) -> None:
-        super().__init__(**kwargs)
+        # _post owns transient-failure retries; the base-class retry would only
+        # multiply the wait on permanent errors. Override with max_retries=N if
+        # outer retries are wanted anyway.
+        super().__init__(
+            max_retries=kwargs.pop("max_retries", 1),
+            backoff=kwargs.pop("backoff", 1.5),
+        )
         self.model = model
         self.host = host.rstrip("/")
         self.timeout = timeout
@@ -60,7 +129,13 @@ class OllamaJudge(Judge):
             "stream": False,
             "options": {"temperature": temperature},
         }
-        data, err = _post(f"{self.host}/api/chat", payload, {"Content-Type": "application/json"}, self.timeout)
+        data, err = _post(
+            f"{self.host}/api/chat",
+            payload,
+            {"Content-Type": "application/json"},
+            self.timeout,
+            max_retries=self.max_retries,
+        )
         ms = (time.perf_counter() - t0) * 1000
         if err:
             return RawCompletion("", "", ms, error=err)
@@ -83,7 +158,10 @@ class OpenAICompatJudge(Judge):
         timeout: float = 120.0,
         **kwargs,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__(
+            max_retries=kwargs.pop("max_retries", 1),
+            backoff=kwargs.pop("backoff", 1.5),
+        )
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
@@ -101,10 +179,16 @@ class OpenAICompatJudge(Judge):
             "messages": [{"role": "user", "content": prompt}],
             "temperature": temperature,
         }
-        data, err = _post(f"{self.base_url}/chat/completions", payload, headers, self.timeout)
+        data, err = _post(
+            f"{self.base_url}/chat/completions",
+            payload,
+            headers,
+            self.timeout,
+            max_retries=self.max_retries,
+        )
         ms = (time.perf_counter() - t0) * 1000
         if err:
-            return RawCompletion("", "", ms, error=err)
+            return RawCompletion("", "", ms, error=redact_secrets(err, [self.api_key]))
         choices = data.get("choices") or []
         text = ""
         if choices:
@@ -126,7 +210,10 @@ class AnthropicJudge(Judge):
         max_tokens: int = 1024,
         **kwargs,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__(
+            max_retries=kwargs.pop("max_retries", 1),
+            backoff=kwargs.pop("backoff", 1.5),
+        )
         self.model = model
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self.timeout = timeout
@@ -147,13 +234,19 @@ class AnthropicJudge(Judge):
             "temperature": temperature,
             "messages": [{"role": "user", "content": prompt}],
         }
-        data, err = _post("https://api.anthropic.com/v1/messages", payload, headers, self.timeout)
+        data, err = _post(
+            "https://api.anthropic.com/v1/messages",
+            payload,
+            headers,
+            self.timeout,
+            max_retries=self.max_retries,
+        )
         ms = (time.perf_counter() - t0) * 1000
         if err:
-            return RawCompletion("", "", ms, error=err)
+            return RawCompletion("", "", ms, error=redact_secrets(err, [self.api_key]))
         content = data.get("content") or []
         text = "".join(c.get("text", "") for c in content if c.get("type") == "text")
         return RawCompletion(text, data.get("model", self.model), ms)
 
 
-__all__ = ["OllamaJudge", "OpenAICompatJudge", "AnthropicJudge", "_post"]
+__all__ = ["OllamaJudge", "OpenAICompatJudge", "AnthropicJudge", "_post", "redact_secrets"]
