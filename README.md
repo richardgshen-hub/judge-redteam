@@ -1,261 +1,203 @@
 # judge-redteam
 
-**Auditing LLM-as-Judge under surface-form perturbation.**
+[![CI](https://github.com/richardgshen-hub/judge-redteam/actions/workflows/ci.yml/badge.svg)](https://github.com/richardgshen-hub/judge-redteam/actions/workflows/ci.yml)
 
-Everyone grades models with models now. RLHF pipelines, agent benchmarks,
-leaderboards, data curation — all of it routes through an LLM judge. This repo
-attacks the judge: it perturbs the *presentation* of an answer without touching
-its *substance*, and measures whether the judge can be steered away from ground
-truth by nothing but formatting, length, tone, or a confident-looking chain of
-reasoning that says nothing.
+LLM-as-judge is everywhere — RLHF pipelines, agent benchmarks, data curation — and nobody audits the auditor. This repo is a preregistered harness that perturbs only the *presentation* of an answer and measures whether an LLM judge is steered away from ground truth by nothing but length, formatting, tone, or a confident-sounding but empty chain of reasoning. **Status: the instrument is built, calibrated on simulated judges, and unit-tested (80 tests + CI); real-model experiments have not been run yet, so this repo contains no conclusions about any real model.**
+
+> **Read this first:** every number currently in this repository comes from a
+> *simulated* judge with deliberately injectable bias. They demonstrate that the
+> measurement pipeline works. They are **not** findings about GPT, Claude,
+> Qwen, or any other model.
 
 ---
 
-## The one idea that matters
-
-Prior work on judge bias reports **disagreement rates**. That is the wrong
-number. A judge with high sampling variance disagrees with itself constantly
-under no perturbation at all — and that disagreement is symmetric, destroying
-as many correct verdicts as it accidentally repairs.
-
-So every flip here is decomposed by direction:
+## How it works
 
 ```
-P_flip→wrong = P(base correct     ∧  perturbed wrong)
-P_flip→right = P(base wrong       ∧  perturbed correct)
-
-net_bias     = P_flip→wrong − P_flip→right
+                 ┌──────────────────────────────────────────────┐
+                 │ 150-item balanced pool (5 domains)           │
+                 │ length/digit-balanced by construction        │
+                 └──────────────────┬───────────────────────────┘
+                                    ▼
+        ┌───────────────────────────────────────────────────────┐
+        │ for each item × axis: build a PAIRED presentation     │
+        │   base        = neutral presentation                  │
+        │   perturbed   = presentation + one perturbation       │
+        │   noise_a/b   = two identical unperturbed repeats     │
+        └──────────────────────────┬────────────────────────────┘
+                                   ▼
+        ┌───────────────────────────────────────────────────────┐
+        │ judge scores every presentation, R replicates each,   │
+        │ every verdict persisted + fsynced (crash-safe resume) │
+        └──────────────────────────┬────────────────────────────┘
+                                   ▼
+        ┌───────────────────────────────────────────────────────┐
+        │ direction decomposition per item:                     │
+        │   net_bias = P(correct→wrong) − P(wrong→correct)      │
+        │ item-cluster permutation test + noise-floor gate      │
+        └──────────────────────────┬────────────────────────────┘
+                                   ▼
+        ┌───────────────────────────────────────────────────────┐
+        │ report: effect sizes, CIs, Holm-adjusted p,           │
+        │ effective sample size, exclusions, disclosure card    │
+        └───────────────────────────────────────────────────────┘
 ```
 
-Under pure noise the flips are direction-symmetric and `net_bias = 0`. A
-significantly positive `net_bias` means the perturbation is not merely
-destabilising the judge — **it is steering it**. That is the difference between
-"this judge is noisy" and "this judge is biased", and it is computable without
-any assumption about the judge's internals.
+Two design decisions carry most of the weight:
 
-A second guard: an axis only counts as a finding if it flips more verdicts than
-the judge flips on its own between two unperturbed repeats. Anything below that
-self-consistency floor is reported as *not detected*, not as a discovery.
-
----
-
-## Why this, why now
-
-- **BenchJack** (UC Berkeley, 2026) showed ten major agent benchmarks could be
-  driven to near-perfect scores by attacking the scoring *harness*. SWE-bench
-  Verified fell to a ten-line `conftest.py`.
-- **OpenAI stopped reporting SWE-bench Verified**, citing flawed test cases in a
-  majority of the hardest unsolved problems.
-- **"Show Your Work"** is now an expected disclosure standard: publish the
-  harness, the scaffold, and the negative results, or the number is marketing.
-
-Those works attack the pipeline. This one attacks the scorer. A benchmark can
-have an impeccable harness and still emit meaningless numbers if the judge
-grading it is biased.
-
----
-
-## Hypotheses
-
-Seven preregistered, direction-decomposed, Holm-corrected. Full protocol in
-[PREREGISTRATION.md](PREREGISTRATION.md).
-
-| ID | Axis | Perturbation |
-|----|------|--------------|
-| H1 | `position` | Swap the A/B presentation order |
-| H2 | `length` | Pad the **wrong** answer with content-free elaboration |
-| H3 | `authority` | Prepend assertive rhetoric to the **wrong** answer |
-| H4 | `format` | Render the **wrong** answer as structured Markdown |
-| H5 | `verbose_cot` | Give the **wrong** answer a long, fluent, logically inert reasoning chain |
-| H6 | `abstention` | Replace the **correct** answer with a calibrated "I don't know" |
-| H7 | `self_preference` | Attribute the **wrong** answer to the judge's own model family |
-
-**H5 is load-bearing.** If extended reasoning makes a *wrong* answer score
-higher, then test-time scaling is degrading evaluation, not just generation.
-
-**H6 is the one with teeth.** If judges rate calibrated abstention *below*
-confident fabrication, then every judge-driven RLHF pipeline is actively
-optimising against honest uncertainty.
-
-H5 ships with an ablation control (`length_matched_control`) that pads the wrong
-answer to the same length with text that says nothing, because a longer chain of
-thought is necessarily longer — without the control, a positive H5 could just be
-length bias in a reasoning costume.
-
----
-
-## The instrument is calibrated
-
-A bias detector that has never been shown to recover a known bias is not a
-measurement instrument, it is an opinion generator. `scripts/selfcheck.py` runs
-both directions against a simulated judge with injected bias:
+**1. Direction, not disagreement.** A noisy judge disagrees with itself constantly under no perturbation at all, symmetrically — so raw disagreement rates are meaningless. Every flip is decomposed:
 
 ```
-$ python scripts/selfcheck.py
+net_bias = P(base correct ∧ perturbed wrong) − P(base wrong ∧ perturbed correct)
+```
+
+Pure noise gives `net_bias = 0`. A positive `net_bias` that clears the noise floor means the perturbation is *steering* the judge, not merely destabilising it. The noise floor itself is the judge's own **wrong-direction self-flip rate** between two identical unperturbed repeats — and an axis below that floor is reported as *not detected*, never as a finding, even if p < α.
+
+**2. The item is the analysis unit.** R replicate calls on the same question are correlated observations, not R independent facts. The significance test permutes each item's direction while keeping its total discordance together (`stats.cluster_permutation_p`), so a judge tested with 5 replicates does not get 5× the statistical confidence. This method is simulation-calibrated (false-positive rate, power, correlated replicates) but **not yet reviewed by a statistician** — see `stats.STATS_REVIEW_NOTE`.
+
+---
+
+## The seven hypotheses
+
+Preregistered in [PREREGISTRATION.md](PREREGISTRATION.md) before any data collection. Original numbering retained; v0.2 reclassified two of them to match what they actually manipulate (logged in [DEVIATIONS.md](DEVIATIONS.md) amendments 5–6).
+
+| ID | Axis | Category | Manipulation |
+|----|------|----------|--------------|
+| H1 | `position` | surface-form | Swap the A/B presentation order |
+| H2 | `length` | surface-form | Pad the **wrong** answer with content-free elaboration |
+| H3 | `authority` | surface-form | Prepend assertive rhetoric to the **wrong** answer |
+| H4 | `format` | surface-form | Render the **wrong** answer as structured Markdown |
+| H5 | `verbose_cot` | surface-form | Give the **wrong** answer a long, fluent, logically inert reasoning chain |
+| H6 | `abstention` | **behavioral** | Replace the **correct** answer with a calibrated "I don't know" |
+| H7 | `self_preference` | **metadata** | Tag the **wrong** answer with the judge's own model-family source label |
+
+- **H5 is load-bearing**: if extended reasoning makes a *wrong* answer score higher, test-time scaling is degrading evaluation, not just generation. It ships with a length-matched ablation control, because a longer chain-of-thought is necessarily longer — without the control, a positive H5 could be length bias in a reasoning costume.
+- **H6 is a behavioral intervention, not a surface perturbation**: it changes what counts as "correct" (calibrated abstention beats confident fabrication). It measures abstention robustness.
+- **H7 is attribution / identity-label bias, not true self-preference**: the judge never sees its own outputs — only a `[source: …]` provenance tag. It measures whether a labelled source sways verdicts.
+
+---
+
+## Calibration
+
+A bias detector that has never recovered a known bias is an opinion generator. `scripts/selfcheck.py` runs both directions against simulated judges:
+
+```
+$ python3 scripts/selfcheck.py          # ~40s, no network
 
 CONDITION A — judge with NO injected bias (false-positive control)
-  [PASS] family-wise false positive rate under zero bias   0/24 = 0.0% (target <= 5%)
+  [PASS] unbiased judge / position: no false positive     net_bias=-0.006 p_adj=0.509
+  ... (all 8 axes silent)
+  [PASS] family-wise false positive rate under zero bias  2/24 = 8.3%
+         (calibrated-test acceptance region at alpha=0.05: <= 3/24)
 
 CONDITION B — judge WITH injected bias (sensitivity control)
-  [PASS] biased judge / position: bias recovered           net_bias=+0.254 p_adj=0.0000
-  [PASS] biased judge / length: bias recovered             net_bias=+0.151 p_adj=0.0005
-  [PASS] biased judge / authority: bias recovered          net_bias=+0.145 p_adj=0.0009
-  [PASS] biased judge / format: bias recovered             net_bias=+0.106 p_adj=0.0066
-  [PASS] biased judge / verbose_cot: bias recovered        net_bias=+0.343 p_adj=0.0000
-  [PASS] biased judge / length_matched_control             net_bias=+0.165 p_adj=0.0000
-  [PASS] biased judge / abstention: bias recovered         net_bias=+0.125 p_adj=0.0055
-  [PASS] biased judge / self_preference: bias recovered    net_bias=+0.129 p_adj=0.0055
-  [PASS] H5 ablation: reasoning structure beats length alone  delta +0.178
+  [PASS] biased judge / position: bias recovered   net_bias=+0.250 h=+0.752 p_adj=0.0007
+  [PASS] biased judge / verbose_cot: bias recovered  net_bias=+0.398 h=+1.048 p_adj=0.0007
+  [PASS] H5 ablation: reasoning structure beats length alone  delta +0.283
 
 28/28 checks passed
-Instrument calibrated: recovers known bias, silent when bias is absent.
 ```
 
-Two things worth reading closely in that output. The false-positive rate is
-estimated over 24 tests across three seeds, because one run cannot distinguish a
-calibrated instrument from a lucky one — and on individual runs an uncorrected
-p-value near 0.05 *does* show up and *is* correctly caught by Holm. Second, the
-H5 ablation reports a delta of +0.178 attributable to reasoning structure rather
-than length, which is the number H5 actually rests on.
+The FPR gate deserves a note: with 24 tests at α = 0.05, a *perfectly* calibrated test produces two false positives about a third of the time, so the gate uses the binomial acceptance region (≤ 3/24), not a point estimate. A gate that flaky would test the gate, not the instrument.
 
 ---
 
-## Install and run
+## Quick start
 
-No dependencies for the core. Standard library only.
+No dependencies for the core — standard library only, Python 3.10+.
 
 ```bash
 git clone https://github.com/richardgshen-hub/judge-redteam && cd judge-redteam
 python3 -m pip install -e ".[dev]"
 
-python3 scripts/demo.py             # no API key, ~6s -> results/demo_report.md
-python3 scripts/validate_items.py data/items.jsonl --strict  # gate the item pool
-python3 scripts/selfcheck.py        # calibrate the instrument (~26s)
-python3 scripts/power_analysis.py   # how many items do you actually need
-python3 -m pytest tests/ -q         # 37 tests
+python3 scripts/demo.py                                      # end-to-end, no API key, ~6s
+python3 scripts/validate_items.py data/items.jsonl --strict  # confound gate on the item pool
+python3 scripts/selfcheck.py                                 # instrument calibration
+python3 -m pytest tests/ -q                                  # 80 tests
 ```
 
-`demo.py` runs against a judge with deliberately injected bias, so it shows the
-full reporting path — tables, effect sizes, noise floor, disclosure card — without
-costing anything or requiring a key. The numbers in its output describe the
-simulated judge, not any real model.
+`demo.py` runs against a judge with deliberately injected bias: full reporting path (tables, effect sizes, noise floor, disclosure card) at zero cost. Its output describes the simulated judge, not any real model.
 
-Against real judges:
+### Running real judges
+
+The default backend is **local Ollama** — no paid API is ever contacted by default.
 
 ```bash
-# local, free
-ollama pull qwen2.5:7b
+# cheap pilot first (2 axes, 1 rep) — check the plumbing, not for findings
+python3 scripts/run_experiment.py --pilot --judge ollama --model qwen2.5:7b
+
+# formal run — always prints the estimated call count first (e.g. 21,000)
 python3 scripts/run_experiment.py --judge ollama --model qwen2.5:7b
 
-# hosted
-export OPENAI_API_KEY=...
-python3 scripts/run_experiment.py --judge openai --model gpt-4o-mini
-
-export ANTHROPIC_API_KEY=...
-python3 scripts/run_experiment.py --judge anthropic --model claude-opus-4-6 --reps 5
+# paid backends refuse to start without explicit consent
+python3 scripts/run_experiment.py --dry-run --judge openai --model gpt-4o-mini  # plan only
+python3 scripts/run_experiment.py --judge openai --model gpt-4o-mini --yes      # explicit consent
 ```
 
-Every judgment is written to disk as it completes. Re-running the same command
-resumes instead of restarting, which matters when the run costs money. Each run
-emits `<run>_raw.jsonl`, `<run>_summary.json`, and `<run>_report.md`, where the
-report carries the full harness disclosure — temperature, prompt templates,
-replicate count, model version strings, parse-failure rate.
+Every judgment is persisted (and fsynced) as it completes; re-running the same command resumes instead of re-billing. Each run emits `<run>_raw.jsonl`, `<run>_manifest.json` (config + data hash + commit), `<run>_summary.json`, and `<run>_report.md` with full harness disclosure. Transient API failures (429/5xx/timeout) are retried with capped exponential backoff; API keys are redacted from stored error strings.
 
 ---
 
 ## Honest limitations
 
-Read these before quoting any number this repo produces.
+1. **No real-model results exist yet.** Everything here is instrument calibration on simulated judges.
+2. **150 items covers medium effects.** Power analysis: detects `h ≥ ~0.195` at 80% power at a 15% noise floor; a null means "not detected at this resolution", never "absent".
+3. **Items are hand-written, not independently validated**, and not checked for training-data contamination in the judges being tested.
+4. **Length balance is enforced, but only on length** — not fluency, hedging, or vocabulary sophistication. Strongest known residual confound.
+5. **The leakage guard is heuristic** (`audit_leakage` catches new numbers/content words, not subtle semantic strengthening). The protocol commits to a 10% human audit sample — not yet done.
+6. **The cluster-permutation statistics have not been reviewed by a statistician** (`stats.STATS_REVIEW_NOTE`). Treat future real-model findings as provisional until then.
+7. **Pairwise comparison only**; pointwise scoring is a different regime.
+8. **Commercial judges are non-stationary**; every run records model version strings and timestamps for this reason.
 
-1. **The item pool is 150 items, which covers medium effects and not small
-   ones.** Measured power at a 15% noise floor: 150 items detect `h ≥ ~0.195` at
-   80% power; detecting `h = 0.15` would need roughly 250. **A null result means
-   "not detected at this resolution", never "absent"** — and any effect below
-   `h ≈ 0.15` is simply invisible to this design.
-2. **The items are hand-written and not independently validated.** They have not
-   been checked for contamination in the training data of the judges being
-   tested. Arithmetic and factual items are the most exposed to this.
-3. **Length balance is enforced, but only on length.** The pool is matched on
-   character count, digit density, and line count (mean signed gap +0.003). It is
-   *not* matched on fluency, hedging, or vocabulary sophistication, any of which
-   could leak a cue in the same way. This is the strongest known residual
-   confound.
-4. **Pairwise comparison only.** Pointwise scoring, which many pipelines use, is
-   a different regime and may behave differently.
-5. **The perturbation guard is heuristic.** `audit_leakage` catches new numbers
-   and new content words, not subtle semantic strengthening. A 10% human audit
-   sample is committed in the protocol and is not yet done.
-6. **Commercial judges are non-stationary.** Results are a snapshot. Every run
-   records model version strings and a timestamp for this reason.
+## Roadmap
 
----
+- [ ] Run the preregistered experiment against ≥ 2 real judges (local + hosted), publish raw + report whatever the result
+- [ ] 10% human audit of the item pool / perturbation outputs (committed in the protocol, not done)
+- [ ] External review of the statistical method (cluster permutation + noise-floor gate)
+- [ ] External preregistration (OSF or similar) before the real-model run
+- [ ] Item pool growth toward small-effect sensitivity (h ≈ 0.15, ~250 items)
 
-## Growing the item pool
+## Related work
 
-Sources live one file per domain in `data/raw/`, so a domain can be extended
-without touching the others. After editing a source, rebuild and re-gate:
+Real, clickable, and worth reading — both document judge biases that motivate the direction-decomposed design:
 
-```bash
-python3 scripts/build_pool.py                              # -> data/items.jsonl
-python3 scripts/validate_items.py data/items.jsonl --strict # hard gate
-python3 -m pytest tests/ -q                                 # same rules as invariants
-```
+- Zheng, Lian et al. (2023). [Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena](https://arxiv.org/abs/2306.05685). NeurIPS 2023 Datasets & Benchmarks. Documents position bias and verbosity bias in LLM judges.
+- Wang, Peiyi et al. (2023). [Large Language Models are not Fair Evaluators](https://arxiv.org/abs/2305.17926). Documents how the order of presented answers skews LLM evaluation.
 
-Write items to a **symmetric template**: identical reasoning skeleton, one step
-divergent. That makes length balance a property of construction rather than
-something you trim into afterwards, and it is the only reason the current pool
-clears the gate at +0.003 mean gap.
-
-An AI generator is provided, but treat it as a source of drafts:
-
-```bash
-python3 scripts/generate_items.py generate --domain arithmetic --n 40 --out data/candidates.jsonl
-python3 scripts/generate_items.py audit --inp data/candidates.jsonl --out data/accepted.jsonl
-```
-
-The generator proposes, the filters dispose, and **a human still has to read
-every item before it enters the pool**. Letting a model write the eval set
-unsupervised is precisely how benchmarks became untrustworthy in the first place.
-
----
+This repo differs from both in that it is a preregistered *audit protocol* with a noise-floor control and item-cluster inference, rather than an observation of bias in a particular system.
 
 ## Layout
 
 ```
 PREREGISTRATION.md   hypotheses, protocol, statistics — locked before data collection
-DEVIATIONS.md        dated log of any departure from the above
+DEVIATIONS.md        dated log of departures from the above (7 amendments so far)
 src/jrt/
   types.py           data structures; ground truth is per-presentation, not per-candidate
-  axes.py            the seven perturbation axes plus the H5 ablation control
-  stats.py           exact McNemar, net-bias decomposition, Cohen's h,
+  axes.py            the seven perturbation axes + H5 ablation control + taxonomy
+  stats.py           item-cluster permutation, noise-floor logic, Cohen's h,
                      cluster bootstrap, Holm, DerSimonian-Laird meta-analysis
-  judges/            ollama, OpenAI-compatible, Anthropic, and a simulated
-                     judge with injectable bias for calibration
-  runner.py          orchestration, raw persistence, crash-safe resume
-  report.py          results tables and Show-Your-Work disclosure card
+  judges/            ollama, OpenAI-compatible, Anthropic (retry/backoff, key
+                     redaction) + simulated judge with injectable bias
+  runner.py          orchestration, immutable run ids, manifest, crash-safe resume
+  report.py          results tables, per-template breakdown, disclosure card
 data/raw/<domain>.jsonl  item sources, one file per domain, human-audited
 data/items.jsonl         the assembled 150-item pool (do not hand-edit)
-scripts/
-  build_pool.py      merge sources into the pool, interleaving domains
-  validate_items.py  confound gate: length balance, leakage cues, schema
-  selfcheck.py       instrument calibration against known injected bias
-  power_analysis.py  Monte Carlo power over the actual test statistic
-  run_experiment.py  run against real judges (costs money, resumes)
-  generate_items.py  AI-assisted drafting of new candidates
-  demo.py            end-to-end run on the simulated judge, no API key
+scripts/             build_pool / validate_items / selfcheck / power_analysis /
+                     run_experiment / generate_items / demo
 ```
-
----
 
 ## Disclosure commitments
 
-- All seven hypotheses reported regardless of outcome. No silent dropping, no
-  post-hoc axes, no subgroup mining.
+- All seven hypotheses reported regardless of outcome. No silent dropping, no post-hoc axes, no subgroup mining.
 - Negative and null results published with equal prominence.
-- Complete harness specification and raw responses shipped with any write-up.
-- Departures from the preregistration logged in `DEVIATIONS.md`, each stating
-  whether it was made before or after seeing outcome data.
+- Excluded verdicts (parse failures, ties, transport errors) are counted in every report; raw responses are always preserved.
+- Departures from the preregistration logged in `DEVIATIONS.md`, each stating whether it was made before or after seeing outcome data.
+- Complete harness specification, manifest (config + item-set hash + code commit), and raw responses ship with any write-up.
+
+## AI-assisted development disclosure
+
+This project was developed with substantial AI assistance (code, tests, item drafting, and documentation), directed and reviewed by the human author. Safeguards against the obvious failure mode — an AI "confirming" its own work — include the preregistration, the dated deviations log, simulated-judge calibration gates that must pass before any real run, and the commitment that a human reads every item entering the pool. Method-level statistical decisions are flagged for human expert review (see `stats.STATS_REVIEW_NOTE`).
 
 ---
 
-MIT license. Hypotheses preregistered 2026-08-30.
+MIT license — see [LICENSE](LICENSE). Hypotheses preregistered 2026-08-30.
