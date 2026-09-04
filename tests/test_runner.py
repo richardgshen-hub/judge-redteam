@@ -8,9 +8,7 @@ machine-readable manifest that records exactly what was run.
 from __future__ import annotations
 
 import os
-import shutil
 import sys
-import tempfile
 
 import pytest
 
@@ -23,15 +21,8 @@ from jrt.judges.simulated import SimulatedJudge  # noqa: E402
 
 ITEMS_PATH = os.path.join(ROOT, "data", "items.jsonl")
 
-
-@pytest.fixture
-def tmp_path():
-    # Override pytest's built-in tmp_path: the default temp root is intercepted
-    # by the sandbox broker here and mkdir fails. A plain /tmp directory is fine
-    # and keeps these tests self-contained.
-    d = tempfile.mkdtemp(prefix="jrt-test-", dir="/tmp")
-    yield d
-    shutil.rmtree(d, ignore_errors=True)
+# tmp_path (overridden in conftest.py to a plain /tmp directory) is used by the
+# resume/integrity tests below.
 
 
 def _exp(output_dir, axes=("length",), reps=2, seed=20260830, **kw):

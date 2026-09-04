@@ -26,6 +26,7 @@ import json
 import os
 import random
 import signal
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable, Sequence
@@ -373,7 +374,19 @@ class Experiment:
             return set()
         return {rec["key"] for rec in self._iter_records(self.raw_path) if "key" in rec}
 
-    def run(self, verbose: bool = True) -> list[Judgment]:
+    def run(
+        self,
+        verbose: bool = True,
+        min_interval: float = 0.0,
+    ) -> list[Judgment]:
+        """Execute pending trials.
+
+        min_interval: minimum seconds between consecutive judge calls, a simple
+        rate limit. Intentionally there is no parallel execution: trials are
+        persisted one at a time with fsync, and a crash-resume depends on that
+        ordering. If you need throughput, lower min_interval rather than adding
+        threads.
+        """
         ok, reason = self.check_resumable()
         if not ok:
             raise ConfigConflict(reason)
@@ -413,6 +426,7 @@ class Experiment:
                 item = item_map[trial.item_id]
                 pkey = f"{trial.item_id}|{trial.axis}|{trial.condition.value}|{judge.id}"
                 pres = self._presentations[pkey]
+                t0 = time.perf_counter()
                 comp = judge.judge_presentation(
                     pres,
                     item.question,
@@ -420,6 +434,12 @@ class Experiment:
                     extra_instruction=trial.extra_instruction,
                     temperature=trial.temperature,
                 )
+                if min_interval > 0:
+                    # Rate limit AFTER the call, so slow backends are not
+                    # additionally delayed and fast ones cannot hammer the API.
+                    elapsed = time.perf_counter() - t0
+                    if elapsed < min_interval:
+                        time.sleep(min_interval - elapsed)
                 judgment = Judgment(
                     trial=trial,
                     raw=comp.text,
@@ -491,16 +511,70 @@ class Experiment:
                 )
                 if not cells:
                     continue
-                results.append(
-                    summarise_axis(
-                        axis_name,
-                        HYPOTHESES[axis_name],
-                        cells,
-                        noise,
-                        confirmatory=axis.confirmatory,
-                    )
+                res = summarise_axis(
+                    axis_name,
+                    HYPOTHESES[axis_name],
+                    cells,
+                    noise,
+                    confirmatory=axis.confirmatory,
                 )
+                # Raw per-condition accuracy: not derivable from the paired (b, c)
+                # counts, because pairs where both conditions were wrong are not
+                # captured there. Reported so a reader can see the level, not just
+                # the difference.
+                res.extra["acc_base"], res.extra["n_base"] = _condition_accuracy(
+                    judgments, judge.id, axis_name, Condition.BASE
+                )
+                res.extra["acc_pert"], res.extra["n_pert"] = _condition_accuracy(
+                    judgments, judge.id, axis_name, Condition.PERTURBED
+                )
+                results.append(res)
             by_judge[judge.id] = apply_correction(results)
+        return by_judge
+
+    def analyse_by_template(
+        self, judgments: list[Judgment] | None = None
+    ) -> dict[str, dict[str, list[AxisResult]]]:
+        """Per-prompt-template breakdown of the same axes.
+
+        The pooled analysis treats templates as another replicate dimension. This
+        view asks the separate question of whether the *prompt phrasing* moves the
+        verdicts, which is only visible when templates are analysed separately.
+        """
+        judgments = judgments if judgments is not None else self.load_judgments()
+        by_judge: dict[str, dict[str, list[AxisResult]]] = {}
+        for judge in self.judges:
+            per_template: dict[str, list[AxisResult]] = {}
+            for template in self.config.templates:
+                subset = [
+                    j
+                    for j in judgments
+                    if j.judge_id == judge.id and j.trial.prompt_template == template
+                ]
+                results: list[AxisResult] = []
+                for axis_name in self.config.axes:
+                    axis = get_axis(axis_name)
+                    cells = _pair_cells(
+                        subset, judge.id, axis_name, Condition.BASE, Condition.PERTURBED
+                    )
+                    noise = (
+                        _pair_cells(subset, judge.id, axis_name, Condition.NOISE_A, Condition.NOISE_B)
+                        if self.config.include_noise_floor
+                        else []
+                    )
+                    if not cells:
+                        continue
+                    results.append(
+                        summarise_axis(
+                            axis_name,
+                            HYPOTHESES[axis_name],
+                            cells,
+                            noise,
+                            confirmatory=axis.confirmatory,
+                        )
+                    )
+                per_template[template] = apply_correction(results)
+            by_judge[judge.id] = per_template
         return by_judge
 
     def write_summary(self, analyses: dict[str, list[AxisResult]]) -> str:
@@ -520,6 +594,31 @@ class Experiment:
             json.dump(payload, fh, indent=2, ensure_ascii=False)
             fh.write("\n")
         return self.summary_path
+
+
+def _condition_accuracy(
+    judgments: Iterable[Judgment],
+    judge_id: str,
+    axis: str,
+    condition: Condition,
+) -> tuple[float, int]:
+    """(accuracy, n_scorable) for one (judge, axis, condition) cell.
+
+    PARSE_FAIL, TIE, and errored verdicts are excluded from the denominator and
+    counted separately in the report's response-quality table — excluded, never
+    silently dropped: every raw response is preserved in the run's JSONL.
+    """
+    scored = [
+        j
+        for j in judgments
+        if j.judge_id == judge_id
+        and j.axis == axis
+        and j.trial.condition == condition
+        and j.is_scorable
+    ]
+    if not scored:
+        return 0.0, 0
+    return sum(1 for j in scored if j.is_correct) / len(scored), len(scored)
 
 
 def _pair_cells(

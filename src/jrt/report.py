@@ -45,20 +45,28 @@ def _fmt_ci(ci: tuple[float, float]) -> str:
 
 def results_table(results: Sequence[AxisResult]) -> str:
     head = (
-        "| Axis | Hyp | pairs | P(→wrong) | P(→right) | net bias | Cohen h | 95% CI | p | p_adj "
+        "| Axis | Hyp | pairs | items | acc base | acc pert | P(→wrong) | P(→right) "
+        "| flips | net bias | Cohen h | 95% CI | p | p_adj "
         "| noise ▸wrong | verdict |\n"
-        "|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---|"
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---|"
     )
     rows = [head]
     for r in results:
+        acc_base = r.extra.get("acc_base")
+        acc_pert = r.extra.get("acc_pert")
         rows.append(
-            "| `{axis}` | {hyp} | {n} | {pw} | {pr} | {nb:+.3f} | {h:+.3f} | {ci} | {p:.4f} "
+            "| `{axis}` | {hyp} | {n} | {ni} | {ab} | {ap} | {pw} | {pr} | {fr} "
+            "| {nb:+.3f} | {h:+.3f} | {ci} | {p:.4f} "
             "| {pa:.4f} | {nf} | {verdict} |".format(
                 axis=r.axis,
                 hyp=r.hypothesis.split(":")[0],
                 n=r.n_pairs,
+                ni=r.n_items or "—",
+                ab=_pct(acc_base) if acc_base is not None else "—",
+                ap=_pct(acc_pert) if acc_pert is not None else "—",
                 pw=_pct(r.p_flip_wrong),
                 pr=_pct(r.p_flip_right),
+                fr=_pct(r.flip_rate),
                 nb=r.net_bias,
                 h=r.cohens_h,
                 ci=_fmt_ci(r.h_ci),
@@ -140,6 +148,24 @@ def write_report(
     ]
     for judge_id, results in analyses.items():
         lines += [f"## Judge `{judge_id}`", "", results_table(results), ""]
+    if len(exp.config.templates) > 1:
+        by_template = exp.analyse_by_template(list(judgments))
+        lines += [
+            "## Per-template breakdown",
+            "",
+            "The pooled analysis above treats prompt templates as another replicate "
+            "dimension. This section analyses each template separately, because a "
+            "phrasing effect is only visible when they are not pooled.",
+            "",
+        ]
+        for judge_id, per_template in by_template.items():
+            for template, results in per_template.items():
+                lines += [
+                    f"### `{template}` (judge `{judge_id}`)",
+                    "",
+                    results_table(results),
+                    "",
+                ]
     lines += [
         "## Notes",
         "",
@@ -153,9 +179,16 @@ def write_report(
         "- The *total* self-disagreement rate (any flip, either direction) is larger and is "
         "recorded separately in the JSON summary as `noise_self_disagreement`; it is not used "
         "for the above-noise decision.",
+        "- **Exclusions are not silent.** PARSE_FAIL verdicts (which include refusals with no "
+        "parseable verdict), TIE verdicts, and transport-errored calls are excluded from the "
+        "paired analysis and counted in *Response quality* above; every raw response is "
+        "preserved in the run's `*_raw.jsonl`. `pairs` counts paired scorable trials; "
+        "`items` is the number of distinct items (the effective sample size for inference).",
         "- An axis flagged *below noise floor* flipped fewer verdicts toward wrong than the "
         "judge does on its own; it is not reported as a finding even if p < alpha.",
         "- Null results carry the same weight as positive ones and are retained.",
+        "- **Reminder: any run against a simulated judge demonstrates the reporting "
+        "pipeline only and is not evidence about any real model.**",
     ]
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
