@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 import math
 import re
@@ -56,6 +57,9 @@ def _clean(value):
 
 def public_source(summary: dict, judge_id: str | None = None) -> dict:
     """Select one judge explicitly and export only fields used by the figures."""
+    manifest = summary.get("manifest", {})
+    if summary.get("schema") != "jrt-figure-source-v1" and manifest.get("schema") != 3:
+        raise ValueError("Unsupported analysis schema: regenerate with manifest schema 3; older h_ci values have different semantics.")
     results = summary.get("results", {})
     if not results:
         raise ValueError("Summary contains no results; run an experiment first.")
@@ -63,14 +67,24 @@ def public_source(summary: dict, judge_id: str | None = None) -> dict:
         if len(results) != 1:
             raise ValueError("Multiple judges found; select one with --judge.")
         judge_id = next(iter(results))
-    if judge_id not in results or not results[judge_id]:
-        raise ValueError(f"No result rows for judge {judge_id!r}.")
-    manifest = summary.get("manifest", {})
+    if judge_id not in results:
+        raise ValueError(f"No results for judge {judge_id!r}.")
     config = summary.get("config", manifest.get("config", {}))
     judges = manifest.get("judges", summary.get("judges", []))
     identity = next((j for j in judges if j.get("id") == judge_id), {})
     kind = identity.get("type", "unknown")
     rows = [{k: row[k] for k in FIELDS if k in row} for row in results[judge_id]]
+    seen = {row["axis"] for row in rows}
+    for axis in config.get("axes", []):
+        if axis not in seen:
+            rows.append({"axis": axis, "n_pairs": 0, "n_items": 0,
+                         "cohens_h": None, "h_ci": [None, None],
+                         "p_flip_wrong": None, "p_flip_right": None,
+                         "above_noise": None, "confirmatory": axis != "length_matched_control",
+                         "verdict": "no scorable pairs"})
+            seen.add(axis)
+    if not rows:
+        raise ValueError("No result rows or configured axes to render.")
     source = {
         "schema": "jrt-figure-source-v1",
         "run_id": summary.get("run_id", summary.get("run", "unknown")),
@@ -78,6 +92,7 @@ def public_source(summary: dict, judge_id: str | None = None) -> dict:
         "n_items": summary.get("n_items", manifest.get("items_count")),
         "config": {k: config[k] for k in ("axes", "reps", "temperature", "templates", "seed", "include_noise_floor") if k in config},
         "manifest": {
+            "schema": 3,
             "items_sha256": manifest.get("items_sha256"),
             "code_commit": manifest.get("code_commit", "unknown"),
             "judges": [{"id": judge_id, "type": kind}],
@@ -132,7 +147,12 @@ def _frame(plt, source, number, title, subtitle, mobile=False, height=7.0, statu
     fig.text(.045, .762 if mobile else .802, subtitle, color=MUTED, fontsize=11, va="top", linespacing=1.5)
     run = source.get("run_id", "unknown")
     seed = source.get("config", {}).get("seed", "unknown")
-    fig.text(.045, .028, f"Run: {run}   |   seed: {seed}   |   source.json + axis_results.csv", fontsize=8.5, color=MUTED)
+    judge = source["manifest"]["judges"][0]["id"]
+    identity = f"Judge: {judge}   |   run: {run}   |   seed: {seed}"
+    if mobile:
+        identity = textwrap.fill(identity, width=76)
+    fig.text(.045, .041, identity, fontsize=8.5, color=MUTED)
+    fig.text(.045, .013, "Data + provenance: source.json / axis_results.csv / item_pool.csv", fontsize=8, color=MUTED)
     return fig
 
 
@@ -153,7 +173,11 @@ def _save(fig, output: Path, stem: str, mobile=False):
             if text.get_position()[1] <= .15 and text.get_position()[1] > .04:
                 text.set_text("\n".join(textwrap.fill(line, width=62) for line in text.get_text().splitlines()))
     name = stem + ("_mobile" if mobile else "")
-    fig.savefig(output / f"{name}.svg", metadata={"Date": None, "Creator": "judge-redteam / matplotlib"})
+    svg = io.StringIO()
+    fig.savefig(svg, format="svg", metadata={"Date": None, "Creator": "judge-redteam / matplotlib"})
+    # Matplotlib emits trailing spaces in path data; normalize them so generated
+    # vector files do not obscure source-review whitespace checks.
+    (output / f"{name}.svg").write_text("\n".join(line.rstrip() for line in svg.getvalue().splitlines())+"\n", encoding="utf-8")
     if not mobile:
         fig.savefig(output / f"{name}.png", dpi=180, metadata={"Software": "judge-redteam / matplotlib"})
 
@@ -184,6 +208,8 @@ def _effects(plt, source, output, mobile):
         ax.text(1.025, i, label, transform=ax.get_yaxis_transform(), va="center", fontsize=11, color=color, weight="bold")
         if control:
             ax.axhspan(i-.45, i+.45, color=GRID, alpha=.35, zorder=-1)
+        if not row.get("n_pairs"):
+            ax.text(.04, i, "no scorable pairs", transform=ax.get_yaxis_transform(), fontsize=9, color=MUTED, va="center")
     ax.set_yticks(range(len(rows)), [_label(r).replace("Verbose reasoning", "Verbose\nreasoning").replace("Length control", "Length\ncontrol") if mobile else _label(r) for r in rows])
     ax.set_xlabel("Cohen's h (directional effect)", color=MUTED, fontsize=11, labelpad=13)
     fig.text(.045, .105, "Intervals are unadjusted; they are not the Holm decision rule.\nDiamond = exploratory H5 length control, outside the seven-test family.", fontsize=10, color=MUTED, linespacing=1.5)
@@ -195,17 +221,22 @@ def _flips(plt, source, output, mobile):
     rows = next(iter(source["results"].values()))
     fig = _frame(plt, source, "02", "Separate harm\nfrom recovery" if mobile else "Separate harm from recovery", "Two flip directions, with an unperturbed reference.\nRates are shares of paired scorable trials, not conditional risks.", mobile)
     ax = _axes(fig, mobile, len(rows))
-    series = [("p_flip_wrong", ORANGE, -.14), ("p_flip_right", TEAL, .14)]
+    series = [("p_flip_wrong", ORANGE, -.24), ("p_flip_right", TEAL, .05)]
     for key, color, offset in series:
         for i, row in enumerate(rows):
             if finite(row.get(key)):
-                ax.barh(i+offset, row[key]*100, height=.23, color=color)
+                ax.barh(i+offset, row[key]*100, height=.20, color=color)
                 ax.text(row[key]*100+.5, i+offset, f"{row[key]:.1%}", va="center", color=color, fontsize=9)
     show_noise = source.get("config", {}).get("include_noise_floor", False)
     if show_noise:
         for i, row in enumerate(rows):
-            if finite(row.get("noise_floor")):
-                ax.plot(row["noise_floor"]*100, i, "D", markersize=6, markerfacecolor="white", markeredgecolor=INK, zorder=5)
+            if finite(row.get("noise_floor")) and row.get("above_noise") is not None:
+                ax.plot(row["noise_floor"]*100, i+.34, "D", markersize=5, markerfacecolor="white", markeredgecolor=INK, zorder=5)
+            else:
+                ax.text(.02, i+.34, "noise unavailable", transform=ax.get_yaxis_transform(), fontsize=8, color=MUTED, va="center")
+    for i, row in enumerate(rows):
+        if not row.get("n_pairs"):
+            ax.text(.02, i-.10, "no scorable pairs", transform=ax.get_yaxis_transform(), fontsize=9, color=MUTED, va="center")
     max_rate = max([r.get(k) or 0 for r in rows for k in ("p_flip_wrong", "p_flip_right", "noise_floor")])
     ax.set_xlim(0, max(20, max_rate*100+9))
     ax.set_yticks(range(len(rows)), [_label(r).replace("Verbose reasoning", "Verbose\nreasoning").replace("Length control", "Length\ncontrol") if mobile else _label(r) for r in rows])
@@ -249,7 +280,9 @@ def _protocol(plt, source, pool, output, mobile):
     from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
     n_axes = len(next(iter(source["results"].values())))
-    fig = _frame(plt, source, "00", "Audit the judge.\nTrace every verdict." if mobile else "Audit the judge. Trace every verdict.", "A paired experiment, from controlled inputs to inspectable evidence.\nSchematic of the current harness; the example run is simulated.", mobile, status="EXPERIMENT DESIGN")
+    simulated = _status(source) == "SIMULATED DATA"
+    evidence = "This run uses a simulated judge." if simulated else "See source.json for the selected judge and run provenance."
+    fig = _frame(plt, source, "00", "Audit the judge.\nTrace every verdict." if mobile else "Audit the judge. Trace every verdict.", "A paired experiment, from controlled inputs to inspectable evidence.\n"+evidence, mobile, status="EXPERIMENT DESIGN")
     ax = fig.add_axes([.045, .13, .91, .50 if mobile else .57])
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
@@ -258,7 +291,7 @@ def _protocol(plt, source, pool, output, mobile):
         ("01", "Construct the item pool", f"{len(pool)} items / {len(set(r['domain'] for r in pool))} domains · length-balance gate"),
         ("02", "Build paired conditions", f"Base + intervention{' + noise A/B' if source.get('config', {}).get('include_noise_floor') else ''} · {n_axes} axes in this run"),
         ("03", "Collect judge verdicts", "Repeated calls · raw responses · manifest + data hash"),
-        ("04", "Analyse at the item level", "Directional flips · cluster intervals · Holm + noise gate"),
+        ("04", "Analyse at the item level", "Directional flips · cluster intervals · Holm" + (" + noise gate" if source.get("config", {}).get("include_noise_floor") else " (no noise control)")),
         ("05", "Publish inspectable evidence", "Figures + tables · exclusions · null results · provenance"),
     ]
     for i, (num, title, body) in enumerate(steps):
@@ -275,12 +308,44 @@ def _protocol(plt, source, pool, output, mobile):
     plt.close(fig)
 
 
-def embed_figures(report_path: Path, output: Path) -> None:
+def validate_report(report_path: Path, source: dict) -> None:
+    """Refuse to attach figures to a different run or different result table."""
+    text = report_path.read_text(encoding="utf-8")
+    run_id = source["run_id"]
+    judge_id, rows = next(iter(source["results"].items()))
+    if f"| run id | `{run_id}` |" not in text:
+        raise ValueError("Report run id does not match figure source.")
+    digest = source["manifest"]["items_sha256"]
+    if not digest or f"| item set sha256[:12] | `{digest[:12]}` |" not in text:
+        raise ValueError("Report item hash does not match figure source.")
+    heading = f"## Judge `{judge_id}`"
+    if heading not in text:
+        raise ValueError("Selected judge is missing from the report.")
+    section = text.split(heading, 1)[1].split("\n## ", 1)[0]
+    table = {}
+    for line in section.splitlines():
+        cols = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cols) == 16 and cols[0].startswith("`"):
+            table[cols[0].strip("`")] = cols
+    for row in rows:
+        if not row.get("n_pairs"):
+            continue
+        cols = table.get(row["axis"], [])
+        ci = row.get("h_ci") or []
+        expected_ci = f"[{ci[0]:+.3f}, {ci[1]:+.3f}]" if len(ci) == 2 and all(finite(v) for v in ci) else "n/a"
+        checks = {2: str(row["n_pairs"]), 6: f"{row['p_flip_wrong']:.1%}", 7: f"{row['p_flip_right']:.1%}", 10: f"{row['cohens_h']:+.3f}", 11: expected_ci}
+        if len(cols) != 16 or any(cols[i] != v for i, v in checks.items()):
+            raise ValueError(f"Report values for {row['axis']} do not match figure source.")
+
+
+def embed_figures(report_path: Path, output: Path, source: dict | None = None) -> None:
     """Insert or replace only the generated figure section; preserve report text."""
     import os
 
     prefix = Path(os.path.relpath(output, report_path.parent)).as_posix()
-    sections = [START, "## Visual analysis", "", "Figures use the same summary as the tables. Read each figure's evidence label.", ""]
+    if source is not None:
+        validate_report(report_path, source)
+    sections = [START, "## Visual analysis", "", "Read each figure's evidence label, selected judge and source data below.", ""]
     for stem, alt in [
         ("effect_sizes", "Directional effect sizes with unadjusted 95% item-cluster bootstrap intervals; H5 length control is exploratory."),
         ("directional_flips", "Correct-to-wrong and wrong-to-correct flip rates with descriptive unperturbed noise references."),
@@ -314,6 +379,8 @@ def render_figures(summary_path: Path, items_path: Path, output: Path, judge_id:
     expected = source["manifest"].get("items_sha256")
     if not expected or digest != expected:
         raise ValueError("Item-pool hash does not match the run; refusing mismatched figures.")
+    if report_path is not None:
+        validate_report(report_path, source)
     pool = pool_records(items_path)
     output.mkdir(parents=True, exist_ok=True)
     (output / "source.json").write_text(json.dumps(source, indent=2, ensure_ascii=False, allow_nan=False)+"\n", encoding="utf-8")
@@ -326,5 +393,5 @@ def render_figures(summary_path: Path, items_path: Path, output: Path, judge_id:
             _pool(plt, source, pool, output, mobile)
             _protocol(plt, source, pool, output, mobile)
     if report_path is not None:
-        embed_figures(report_path, output)
+        embed_figures(report_path, output, source)
     return sorted(output.glob("*.svg"))

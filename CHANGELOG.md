@@ -15,9 +15,14 @@ model results exist in this repository.
   item-length balance and a protocol diagram in SVG and PNG, with portrait
   variants for narrow screens and downloadable JSON/CSV values.
 - Added optional `.[viz]` dependencies, `demo.py --figures`, a standalone figure
-  renderer and CI export checks. The core remains standard-library only.
+  renderer and a prepared CI export-check template. Workflow activation is
+  pending authorization; the template is in `docs/ci.example.yml`.
+  The core remains standard-library only.
 - Refined README/report claims and added a Chinese project guide. Simulated
   outcomes, unadjusted intervals and the exploratory H5 control are explicit.
+- Guarded figure provenance: reject incompatible analysis schemas and mismatched
+  report values, retain missing hypotheses, and distinguish unavailable noise
+  controls from observed zero rates. Every figure identifies its selected judge.
 
 ### Fixed
 
@@ -54,11 +59,11 @@ model results exist in this repository.
 - HTTP transport hardening: capped exponential backoff on 429/5xx/timeouts,
   fail-fast on auth errors and malformed bodies, API-key redaction in persisted
   error strings, injectable sleep for deterministic tests.
-- CI (GitHub Actions): tests on Python 3.10–3.13, strict data gate, demo smoke
-  test, and focused static correctness checks.
+- Prepared GitHub Actions template (not yet active): tests on Python 3.10–3.13,
+  strict data gate, demo smoke test, figure exports and static correctness checks.
 - MIT `LICENSE`, `CITATION.cff`, `CONTRIBUTING.md`, this changelog.
-- Test suite expanded to 90 checks covering run identity/resume, statistics,
-  axes/taxonomy, HTTP transport, and end-to-end behavior.
+- Test suite expanded to 109 checks covering run identity/resume, statistics,
+  axes/taxonomy, HTTP transport, figure provenance and end-to-end behavior.
 
 ## [0.1.0] — 2026-08-30
 

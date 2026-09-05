@@ -2,7 +2,7 @@
 
 [English](README.md) · [中文导读](docs/README.zh-CN.md) · [Worked report](results/demo_report.md) · [Figure guide](docs/FIGURES.md)
 
-[![CI](https://github.com/richardgshen-hub/judge-redteam/actions/workflows/ci.yml/badge.svg)](https://github.com/richardgshen-hub/judge-redteam/actions/workflows/ci.yml)
+[MIT license](LICENSE) · Python 3.10+ · Standard-library core · [Automation template](docs/ci.example.yml)
 
 An audit harness for LLM judges: apply controlled changes to answer presentation, metadata, and behavior, then measure whether judgments move away from ground truth. The repository records its hypotheses and protocol before real-model experiments, with subsequent changes in a dated deviations log.
 
@@ -37,7 +37,10 @@ The same simulated run is shown in two views: the size of each directional effec
 
 ## How it works
 
-![Experiment flow: items, paired interventions and noise controls, judge calls, item-cluster inference, report.](docs/figures/demo/protocol.svg)
+<picture>
+  <source media="(max-width: 700px)" srcset="docs/figures/demo/protocol_mobile.svg">
+  <img src="docs/figures/demo/protocol.svg" alt="Experiment flow: items, paired interventions and noise controls, judge calls, item-cluster inference, report.">
+</picture>
 
 The pool contains 150 constructed items, with 30 in each of five domains. This describes its composition; independent item validation is still pending.
 

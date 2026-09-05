@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from jrt.figures import START, embed_figures, public_source, render_figures
+from jrt.figures import START, embed_figures, public_source, render_figures, validate_report
 
 ITEMS = Path(__file__).resolve().parents[1] / "data/items.jsonl"
 
@@ -18,7 +18,7 @@ def summary():
     return {
         "run_id": "fixture", "n_items": 150,
         "config": {"seed": 7, "include_noise_floor": True, "items_path": "/private/author/data", "api_key": "secret"},
-        "manifest": {"items_sha256": hashlib.sha256(ITEMS.read_bytes()).hexdigest(), "code_commit": "abc", "judges": [{"id": "sim", "type": "SimulatedJudge", "api_key": "secret"}]},
+        "manifest": {"schema": 3, "items_sha256": hashlib.sha256(ITEMS.read_bytes()).hexdigest(), "code_commit": "abc", "judges": [{"id": "sim", "type": "SimulatedJudge", "api_key": "secret"}]},
         "results": {"sim": [
             {"axis": "position", "n_pairs": 100, "n_items": 50, "b": 20, "c": 10, "cohens_h": .3, "h_ci": [.1, .5], "p_flip_wrong": .2, "p_flip_right": .1, "noise_floor": .07, "confirmatory": True},
             {"axis": "length_matched_control", "n_pairs": 80, "n_items": 40, "cohens_h": -.1, "h_ci": [-.3, .1], "p_flip_wrong": .05, "p_flip_right": .1, "noise_floor": .06, "confirmatory": False},
@@ -84,3 +84,22 @@ def test_figures_and_csv_preserve_negative_control_and_observed_rates(summary, t
     assert rows[0]["h_ci_low"] == ""
     with (output / "item_pool.csv").open(newline="") as fh:
         assert len(list(csv.DictReader(fh))) == 150
+
+
+@pytest.mark.parametrize("edit", ["run", "effect", "hash"])
+def test_report_validation_rejects_mismatched_evidence_before_embedding(tmp_path, edit):
+    root = ITEMS.parents[1]
+    source = public_source(json.loads((root / "docs/figures/demo/source.json").read_text()))
+    text = (root / "results/demo_report.md").read_text()
+    report = Path(tmp_path) / "report.md"
+    report.write_text(text, encoding="utf-8")
+    validate_report(report, source)
+    if edit == "run":
+        source["run_id"] = "another-run"
+    elif edit == "effect":
+        next(iter(source["results"].values()))[0]["cohens_h"] = 99.0
+    else:
+        source["manifest"]["items_sha256"] = "incorrect-hash"
+    with pytest.raises(ValueError, match="match"):
+        embed_figures(report, Path(tmp_path) / "figures", source)
+    assert report.read_text() == text
