@@ -149,26 +149,23 @@ def cluster_permutation_p(
 
     The analysis unit is the *item*, not the replicate. The R replicate calls of
     one item are correlated, so they do not supply R independent flips. We keep
-    each item's total discordance (b_i + c_i) as a single cluster but randomize
-    its *direction* under the null -- exactly what a fair-coin flip of each
-    item's verdict would do. Resampling whole items instead (keeping their
-    realized directions) would re-center the null on the observed value and
-    never reject, which is why direction, not item identity, is permuted.
+    each item's observed signed discrepancy (b_i - c_i) as one cluster and
+    randomly flip that cluster's sign under the null. A balanced item with
+    b_i == c_i therefore contributes zero, as it must.
 
     Under H0 there is no systematic direction bias, so the observed signed
-    discrepancy D = sum_i sign_i (b_i - c_i) should be typical of the
-    sign-permuted distribution. p is the fraction of permutations at least as
+    discrepancy D = sum_i (b_i - c_i) should be typical of the sign-permuted
+    distribution. p is the fraction of permutations at least as
     extreme, with a +1 / (n+1) correction.
 
     Returns (p_value, observed_signed_discrepancy).
     """
     if not cells:
         return 1.0, 0
-    mags = [c.b + c.c for c in cells]
-    if sum(mags) == 0:
+    deltas = [c.b - c.c for c in cells]
+    if not any(deltas):
         return 1.0, 0
-    signs = [1 if c.b >= c.c else -1 for c in cells]
-    d_obs = sum(s * m for s, m in zip(signs, mags))
+    d_obs = sum(deltas)
     rng = random.Random(seed)
     k = len(cells)
     count = 0
@@ -176,7 +173,7 @@ def cluster_permutation_p(
         d = 0
         for i in range(k):
             s = 1 if rng.random() < 0.5 else -1
-            d += s * mags[i]
+            d += s * deltas[i]
         if abs(d) >= abs(d_obs):
             count += 1
     return (count + 1) / (n_resample + 1), d_obs
@@ -321,7 +318,12 @@ def summarise_axis(
     h = cohens_h(agg.p_flip_wrong, agg.p_flip_right)
 
     clusters = [[1.0] * x.b + [-1.0] * x.c + [0.0] * (x.n - x.b - x.c) for x in cells]
-    h_ci = cluster_bootstrap_ci(clusters, lambda flat: sum(flat) / len(flat) if flat else 0.0)
+    def _h_from_flips(flat: list[float]) -> float:
+        if not flat:
+            return 0.0
+        return cohens_h(flat.count(1.0) / len(flat), flat.count(-1.0) / len(flat))
+
+    h_ci = cluster_bootstrap_ci(clusters, _h_from_flips)
 
     effects = [cohens_h(x.p_flip_wrong, x.p_flip_right) for x in cells if x.n > 0]
     variances = [cohens_h_var(x.n) for x in cells if x.n > 0]

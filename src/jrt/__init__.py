@@ -10,7 +10,7 @@ from .runner import Experiment, RunConfig
 from .stats import AxisResult, summarise_axis
 from .types import Item, Judgment, load_items
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "AXES",

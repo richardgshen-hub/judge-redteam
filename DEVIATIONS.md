@@ -1,6 +1,7 @@
 # Deviations from preregistration
 
-Empty as of 2026-08-30.
+No real-model outcome data have been collected as of 2026-09-05. The amendments
+below were recorded during instrument design and hardening.
 
 Every entry records:
 
@@ -96,8 +97,8 @@ variance. An ad-hoc constant there undermines every verdict downstream of it.
 
 1. The headline significance test changed from an exact McNemar on the pooled
    (B, C) discordant totals to an **item-cluster permutation test**
-   (`stats.cluster_permutation_p`). Each item's total discordance is one cluster;
-   under H0 its direction is randomised.
+   (`stats.cluster_permutation_p`). Each item's observed signed discrepancy
+   `(b_i-c_i)` is one cluster; under H0 its sign is randomised.
 2. The noise-floor definition was unified: `noise_floor` now specifically means
    the **wrong-direction self-flip rate** (P(correct→wrong) between two identical
    unperturbed repeats), the baseline a real effect must beat. The *total*
@@ -159,6 +160,30 @@ showed 2/24 = 8.3%, inside the acceptance region, with all eight primary-seed
 family-wise tests silent.
 
 **Timing:** before outcome data existed.
+
+## Amendment 8 (2026-09-05, independent audit) — recorded before any real-judge data collection
+
+**Changed:** three correctness fixes found during an independent pre-publication
+code review.
+
+1. The item-cluster permutation statistic now sign-flips each item's observed
+   `(b_i-c_i)` discrepancy. The initial v0.2 implementation incorrectly
+   sign-flipped `(b_i+c_i)`, so an item with equal wrong- and right-direction
+   flips could contribute a non-zero signal.
+2. The bootstrap interval shown beside Cohen's `h` is now calculated on
+   Cohen's `h`; the initial implementation calculated a net-bias interval but
+   labelled it as an effect-size interval.
+3. The power analysis now uses a conservative item-cluster model rather than
+   treating replicates as independent. The v0.1 numerical power claims remain
+   in the locked preregistration as historical context but are retired for
+   future real-model claims.
+
+**Why:** all three issues could overstate or mislabel statistical evidence. A
+pre-publication audit is useful only if it changes the code before outcome data
+exist, rather than explaining the problem away after results are visible.
+
+**Timing:** before any real-model data collection. Only simulated judges were
+used to find and verify these corrections.
 
 ## Template
 

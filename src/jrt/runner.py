@@ -47,7 +47,7 @@ from .types import (
     load_items,
 )
 
-MANIFEST_SCHEMA_VERSION = 2
+MANIFEST_SCHEMA_VERSION = 3
 
 
 def _rival(family: str) -> str:
@@ -106,14 +106,17 @@ def _fingerprint(config: "RunConfig", items_hash: str, judges: Sequence[Judge]) 
     payload = json.dumps(
         {
             "schema": MANIFEST_SCHEMA_VERSION,
-            "axes": sorted(config.axes),
+            "axes": list(config.axes),
             "reps": config.reps,
             "temperature": config.temperature,
-            "templates": sorted(config.templates),
+            "templates": list(config.templates),
             "seed": config.seed,
             "noise_floor": config.include_noise_floor,
             "items_sha256": items_hash,
-            "judges": sorted(j.id for j in judges),
+            "judges": sorted(
+                (j.identity_record() for j in judges),
+                key=lambda rec: json.dumps(rec, sort_keys=True),
+            ),
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -147,12 +150,11 @@ class RunConfig:
     resume: bool = True
 
     def as_record(self) -> dict[str, Any]:
-        # Canonical, order-independent form: the identity fingerprint sorts axes
-        # and templates, so the recorded config must too. Two runs that differ
-        # only in axis ordering are the same experiment and must compare equal.
+        # Preserve ordering: axis order currently affects seeded perturbation
+        # construction and is therefore part of the exact experiment identity.
         d = asdict(self)
-        d["axes"] = sorted(self.axes)
-        d["templates"] = sorted(self.templates)
+        d["axes"] = list(self.axes)
+        d["templates"] = list(self.templates)
         return d
 
 
@@ -172,7 +174,7 @@ class RunManifest:
     items_path: str
     items_sha256: str
     items_count: int
-    judges: list[dict[str, str]]
+    judges: list[dict[str, Any]]
     code_commit: str
 
     def to_record(self) -> dict[str, Any]:
@@ -195,6 +197,8 @@ class RunManifest:
     def diff(self, other: "RunManifest") -> list[str]:
         """Human-readable list of everything that differs, for a refusal message."""
         out = []
+        if self.schema != other.schema:
+            out.append(f"manifest schema: {self.schema} vs {other.schema}")
         if self.items_sha256 != other.items_sha256:
             out.append(
                 f"item set: {self.items_sha256[:12]} vs {other.items_sha256[:12]}"
@@ -204,11 +208,21 @@ class RunManifest:
                 a, b = self.config.get(k), other.config.get(k)
                 if a != b:
                     out.append(f"{k}: {a!r} vs {b!r}")
-        if sorted(j["id"] for j in self.judges) != sorted(j["id"] for j in other.judges):
+        left = sorted(self.judges, key=lambda rec: json.dumps(rec, sort_keys=True))
+        right = sorted(other.judges, key=lambda rec: json.dumps(rec, sort_keys=True))
+        if left != right:
             out.append(
-                "judges: "
-                f"{sorted(j['id'] for j in self.judges)} vs "
-                f"{sorted(j['id'] for j in other.judges)}"
+                "judges: " +
+                f"{[j.get('id') for j in left]} vs {[j.get('id') for j in right]} "
+                "(identity settings differ)"
+            )
+        if (
+            self.code_commit != "unknown"
+            and other.code_commit != "unknown"
+            and self.code_commit != other.code_commit
+        ):
+            out.append(
+                f"code commit: {self.code_commit[:12]} vs {other.code_commit[:12]}"
             )
         return out
 
@@ -222,7 +236,6 @@ class Experiment:
     def __post_init__(self) -> None:
         if not self.items:
             self.items = load_items(self.config.items_path)
-        self.rng = random.Random(self.config.seed)
         self._presentations: dict[str, Presentation] = {}
         os.makedirs(self.config.output_dir, exist_ok=True)
 
@@ -241,9 +254,7 @@ class Experiment:
             items_path=self.config.items_path,
             items_sha256=self.items_sha256,
             items_count=len(self.items),
-            judges=[
-                {"id": j.id, "family": j.family, "type": type(j).__name__} for j in self.judges
-            ],
+            judges=[j.identity_record() for j in self.judges],
             code_commit=self.code_commit_sha,
         )
 
@@ -307,18 +318,24 @@ class Experiment:
                 + "\n".join(f"  - {d}" for d in diffs)
                 + "\nUse a different --name, or --no-resume to start over."
             )
+        # A resumed run keeps the timestamp at which data collection originally
+        # began instead of presenting the latest process start as a new run.
+        self.manifest.created_utc = prior.created_utc
         return True, "configuration matches"
 
     # -- trial construction --------------------------------------------
 
     def build_trials(self) -> list[Trial]:
+        # Local RNG makes trial construction idempotent. Calling expected_calls()
+        # or build_trials() must never change the later experiment treatment.
+        rng = random.Random(self.config.seed)
         trials: list[Trial] = []
         for judge in self.judges:
             ctx = {"judge_family": judge.family, "rival_family": _rival(judge.family)}
             for axis_name in self.config.axes:
                 axis = get_axis(axis_name)
                 for item in self.items:
-                    pair = axis.build(item, self.rng, ctx)
+                    pair = axis.build(item, rng, ctx)
                     conditions: list[tuple[Condition, Presentation]] = [
                         (Condition.BASE, pair.base),
                         (Condition.PERTURBED, pair.perturbed),
@@ -451,8 +468,12 @@ class Experiment:
                 rec = judgment.to_record()
                 rec["key"] = trial.key
                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                # A completed paid call is durable before the next call starts.
+                # This is intentionally conservative; network latency dominates
+                # the tiny fsync cost and avoids re-billing after a hard crash.
+                fh.flush()
+                os.fsync(fh.fileno())
                 if n % 25 == 0:
-                    fh.flush()
                     if verbose:
                         print(f"  ... {n}/{len(pending)}")
                 out.append(judgment)

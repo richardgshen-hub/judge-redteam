@@ -104,6 +104,19 @@ def test_summarise_axis_records_item_level_identity():
     assert res.extra.get("method") == "cluster-permutation"
 
 
+def test_balanced_flips_within_every_item_are_exactly_null():
+    cells = [PairedOutcome(n=10, b=5, c=5, item_id=f"i{j}") for j in range(8)]
+    p, discrepancy = cluster_permutation_p(cells)
+    assert discrepancy == 0
+    assert p == 1.0
+
+
+def test_reported_interval_is_for_cohens_h():
+    cells = [PairedOutcome(n=10, b=8, c=2, item_id=f"i{j}") for j in range(12)]
+    res = summarise_axis("position", "hyp", cells)
+    assert res.h_ci[0] <= res.cohens_h <= res.h_ci[1]
+
+
 def test_summarise_axis_no_discordance_is_not_significant():
     cells = [
         PairedOutcome(n=10, b=0, c=0, item_id="a"),

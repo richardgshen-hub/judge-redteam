@@ -1,19 +1,18 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "judge-redteam"
 version = "0.2.0"
-description = "Auditing LLM-as-Judge under surface-form perturbation"
+description = "Auditing LLM-as-Judge under controlled answer interventions"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "Richard Shen" }]
 keywords = ["llm", "evaluation", "llm-as-judge", "benchmark", "reward-hacking", "calibration"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = []
@@ -31,3 +30,8 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff.lint]
+# Keep CI focused on correctness errors. Broader style cleanup is deliberately
+# separate from scientific-method changes so reviews remain readable.
+select = ["E9", "F63", "F7", "F82"]

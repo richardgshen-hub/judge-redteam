@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/richardgshen-hub/judge-redteam/actions/workflows/ci.yml/badge.svg)](https://github.com/richardgshen-hub/judge-redteam/actions/workflows/ci.yml)
 
-LLM-as-judge is everywhere — RLHF pipelines, agent benchmarks, data curation — and nobody audits the auditor. This repo is a preregistered harness that perturbs only the *presentation* of an answer and measures whether an LLM judge is steered away from ground truth by nothing but length, formatting, tone, or a confident-sounding but empty chain of reasoning. **Status: the instrument is built, calibrated on simulated judges, and unit-tested (80 tests + CI); real-model experiments have not been run yet, so this repo contains no conclusions about any real model.**
+LLM-as-judge is everywhere — RLHF pipelines, agent benchmarks, data curation — and nobody audits the auditor. This repo is a preregistered harness that applies controlled surface-form, metadata, and behavioral interventions to answers, then measures whether an LLM judge is steered away from ground truth. **Status: the instrument is built, calibrated on simulated judges, and unit-tested (90 tests + CI); real-model experiments have not been run yet, so this repo contains no conclusions about any real model.**
 
 > **Read this first:** every number currently in this repository comes from a
 > *simulated* judge with deliberately injectable bias. They demonstrate that the
@@ -53,7 +53,7 @@ net_bias = P(base correct ∧ perturbed wrong) − P(base wrong ∧ perturbed co
 
 Pure noise gives `net_bias = 0`. A positive `net_bias` that clears the noise floor means the perturbation is *steering* the judge, not merely destabilising it. The noise floor itself is the judge's own **wrong-direction self-flip rate** between two identical unperturbed repeats — and an axis below that floor is reported as *not detected*, never as a finding, even if p < α.
 
-**2. The item is the analysis unit.** R replicate calls on the same question are correlated observations, not R independent facts. The significance test permutes each item's direction while keeping its total discordance together (`stats.cluster_permutation_p`), so a judge tested with 5 replicates does not get 5× the statistical confidence. This method is simulation-calibrated (false-positive rate, power, correlated replicates) but **not yet reviewed by a statistician** — see `stats.STATS_REVIEW_NOTE`.
+**2. The item is the analysis unit.** R replicate calls on the same question are correlated observations, not R independent facts. The significance test keeps each item's observed net directional discrepancy (`b-c`) together and randomly flips its sign (`stats.cluster_permutation_p`), so a judge tested with 5 replicates does not get 5× the statistical confidence. This method is simulation-calibrated (false-positive rate, power, correlated replicates) but **not yet reviewed by a statistician** — see `stats.STATS_REVIEW_NOTE`.
 
 ---
 
@@ -85,9 +85,9 @@ A bias detector that has never recovered a known bias is an opinion generator. `
 $ python3 scripts/selfcheck.py          # ~40s, no network
 
 CONDITION A — judge with NO injected bias (false-positive control)
-  [PASS] unbiased judge / position: no false positive     net_bias=-0.006 p_adj=0.509
+  [PASS] unbiased judge / position: no false positive     net_bias=-0.006 p_adj=1.000
   ... (all 8 axes silent)
-  [PASS] family-wise false positive rate under zero bias  2/24 = 8.3%
+  [PASS] family-wise false positive rate under zero bias  0/24 = 0.0%
          (calibrated-test acceptance region at alpha=0.05: <= 3/24)
 
 CONDITION B — judge WITH injected bias (sensitivity control)
@@ -113,7 +113,7 @@ python3 -m pip install -e ".[dev]"
 python3 scripts/demo.py                                      # end-to-end, no API key, ~6s
 python3 scripts/validate_items.py data/items.jsonl --strict  # confound gate on the item pool
 python3 scripts/selfcheck.py                                 # instrument calibration
-python3 -m pytest tests/ -q                                  # 80 tests
+python3 -m pytest tests/ -q                                  # 90 tests
 ```
 
 `demo.py` runs against a judge with deliberately injected bias: full reporting path (tables, effect sizes, noise floor, disclosure card) at zero cost. Its output describes the simulated judge, not any real model.
@@ -141,7 +141,7 @@ Every judgment is persisted (and fsynced) as it completes; re-running the same c
 ## Honest limitations
 
 1. **No real-model results exist yet.** Everything here is instrument calibration on simulated judges.
-2. **150 items covers medium effects.** Power analysis: detects `h ≥ ~0.195` at 80% power at a 15% noise floor; a null means "not detected at this resolution", never "absent".
+2. **150 items covers moderate effects under a conservative cluster model.** The v0.1 power numbers treated replicates as independent and were retired when inference moved to the item level. `scripts/power_analysis.py` now treats perfectly correlated replicates as one item-level unit; its seeded simulation estimates an 80%-power threshold around `h = 0.46`. A null always means "not detected at this resolution", never "absent".
 3. **Items are hand-written, not independently validated**, and not checked for training-data contamination in the judges being tested.
 4. **Length balance is enforced, but only on length** — not fluency, hedging, or vocabulary sophistication. Strongest known residual confound.
 5. **The leakage guard is heuristic** (`audit_leakage` catches new numbers/content words, not subtle semantic strengthening). The protocol commits to a 10% human audit sample — not yet done.
@@ -170,7 +170,7 @@ This repo differs from both in that it is a preregistered *audit protocol* with 
 
 ```
 PREREGISTRATION.md   hypotheses, protocol, statistics — locked before data collection
-DEVIATIONS.md        dated log of departures from the above (7 amendments so far)
+DEVIATIONS.md        dated log of departures from the above (8 amendments so far)
 src/jrt/
   types.py           data structures; ground truth is per-presentation, not per-candidate
   axes.py            the seven perturbation axes + H5 ablation control + taxonomy
@@ -180,7 +180,7 @@ src/jrt/
                      redaction) + simulated judge with injectable bias
   runner.py          orchestration, immutable run ids, manifest, crash-safe resume
   report.py          results tables, per-template breakdown, disclosure card
-data/raw/<domain>.jsonl  item sources, one file per domain, human-audited
+data/raw/<domain>.jsonl  item sources, one file per domain; independent audit pending
 data/items.jsonl         the assembled 150-item pool (do not hand-edit)
 scripts/             build_pool / validate_items / selfcheck / power_analysis /
                      run_experiment / generate_items / demo
@@ -196,7 +196,7 @@ scripts/             build_pool / validate_items / selfcheck / power_analysis /
 
 ## AI-assisted development disclosure
 
-This project was developed with substantial AI assistance (code, tests, item drafting, and documentation), directed and reviewed by the human author. Safeguards against the obvious failure mode — an AI "confirming" its own work — include the preregistration, the dated deviations log, simulated-judge calibration gates that must pass before any real run, and the commitment that a human reads every item entering the pool. Method-level statistical decisions are flagged for human expert review (see `stats.STATS_REVIEW_NOTE`).
+This project was developed with substantial AI assistance (code, tests, item drafting, and documentation), directed and reviewed by the human author. Safeguards against the obvious failure mode — an AI "confirming" its own work — include the preregistration, the dated deviations log, simulated-judge calibration gates that must pass before any real run, and a planned 10% human audit. Method-level statistical decisions are flagged for human expert review (see `stats.STATS_REVIEW_NOTE`).
 
 ---
 

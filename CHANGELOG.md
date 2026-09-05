@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.2.0] — 2026-08-30
+## [0.2.0] — 2026-09-05
 
 Hardening release: research prototype → structured, reproducible harness.
 All changes below were made **before any real-model data collection**; no real
@@ -23,6 +23,13 @@ model results exist in this repository.
   Simulation tests cover null false-positive rate, power under known bias, and
   perfectly-correlated replicates. Method is flagged as not yet
   statistician-reviewed (`stats.STATS_REVIEW_NOTE`).
+- **Audit corrections.** The permutation statistic now sign-flips each item's
+  observed `(b-c)` discrepancy (balanced within-item flips contribute zero),
+  and the bootstrap interval reported beside Cohen's h is computed on Cohen's
+  h rather than net bias.
+- **Deterministic construction.** Repeated calls to `build_trials()` are
+  idempotent, axis ordering is part of the run identity, and judge identity
+  records include non-secret backend settings.
 - **Noise floor.** `noise_floor` now specifically means the *wrong-direction
   self-flip rate*; the total self-disagreement rate is reported separately
   (`noise_self_disagreement`) and is not used for verdicts. Significant results
@@ -38,10 +45,10 @@ model results exist in this repository.
   fail-fast on auth errors and malformed bodies, API-key redaction in persisted
   error strings, injectable sleep for deterministic tests.
 - CI (GitHub Actions): tests on Python 3.10–3.13, strict data gate, demo smoke
-  test.
+  test, and focused static correctness checks.
 - MIT `LICENSE`, `CITATION.cff`, `CONTRIBUTING.md`, this changelog.
-- Tests: run identity/resume (11), statistics (10), axes/taxonomy (7), HTTP
-  transport (9).
+- Test suite expanded to 90 checks covering run identity/resume, statistics,
+  axes/taxonomy, HTTP transport, and end-to-end behavior.
 
 ## [0.1.0] — 2026-08-30
 

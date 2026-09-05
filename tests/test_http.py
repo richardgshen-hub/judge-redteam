@@ -152,3 +152,20 @@ def test_judge_error_never_contains_api_key(no_network):
     assert comp.error
     assert "sk-secret1234" not in comp.error
     assert "[redacted]" in comp.error
+
+
+def test_judge_default_retries_transient_transport_error(no_network):
+    rec = no_network([
+        _http_error(429),
+        FakeResp(json.dumps({"model": "gpt-test", "choices": []}).encode()),
+    ])
+    judge = OpenAICompatJudge(model="gpt-test", base_url="http://test/v1")
+    comp = judge._call("prompt", 0.7)
+    assert comp.error == ""
+    assert rec.calls == 2
+
+
+def test_judge_identity_never_contains_api_key():
+    judge = OpenAICompatJudge(model="gpt-test", api_key="sk-secret1234")
+    identity = json.dumps(judge.identity_record())
+    assert "sk-secret1234" not in identity

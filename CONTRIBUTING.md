@@ -11,7 +11,7 @@ git clone https://github.com/richardgshen-hub/judge-redteam
 cd judge-redteam
 python -m pip install -e ".[dev]"
 python -m pytest -q                        # all tests must pass
-python scripts/validate_items.py --strict  # data gate must pass
+python scripts/validate_items.py data/items.jsonl --strict  # data gate must pass
 python scripts/demo.py                     # simulated smoke test, no network
 ```
 

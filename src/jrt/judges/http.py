@@ -108,13 +108,10 @@ class OllamaJudge(Judge):
         timeout: float = 120.0,
         **kwargs,
     ) -> None:
-        # _post owns transient-failure retries; the base-class retry would only
-        # multiply the wait on permanent errors. Override with max_retries=N if
-        # outer retries are wanted anyway.
-        super().__init__(
-            max_retries=kwargs.pop("max_retries", 1),
-            backoff=kwargs.pop("backoff", 1.5),
-        )
+        # _post owns transient retries. Keep the base wrapper at one attempt so
+        # permanent errors are not retried a second time outside the transport.
+        self.transport_retries = kwargs.pop("max_retries", 3)
+        super().__init__(max_retries=1, backoff=kwargs.pop("backoff", 1.5))
         self.model = model
         self.host = host.rstrip("/")
         self.timeout = timeout
@@ -134,13 +131,21 @@ class OllamaJudge(Judge):
             payload,
             {"Content-Type": "application/json"},
             self.timeout,
-            max_retries=self.max_retries,
+            max_retries=self.transport_retries,
+            backoff=self.backoff,
         )
         ms = (time.perf_counter() - t0) * 1000
         if err:
             return RawCompletion("", "", ms, error=err)
         text = (data.get("message") or {}).get("content", "")
         return RawCompletion(text, data.get("model", self.model), ms)
+
+    def identity_record(self) -> dict[str, object]:
+        return {
+            **super().identity_record(),
+            "model": self.model,
+            "host": self.host,
+        }
 
 
 class OpenAICompatJudge(Judge):
@@ -158,10 +163,8 @@ class OpenAICompatJudge(Judge):
         timeout: float = 120.0,
         **kwargs,
     ) -> None:
-        super().__init__(
-            max_retries=kwargs.pop("max_retries", 1),
-            backoff=kwargs.pop("backoff", 1.5),
-        )
+        self.transport_retries = kwargs.pop("max_retries", 3)
+        super().__init__(max_retries=1, backoff=kwargs.pop("backoff", 1.5))
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
@@ -184,7 +187,8 @@ class OpenAICompatJudge(Judge):
             payload,
             headers,
             self.timeout,
-            max_retries=self.max_retries,
+            max_retries=self.transport_retries,
+            backoff=self.backoff,
         )
         ms = (time.perf_counter() - t0) * 1000
         if err:
@@ -194,6 +198,13 @@ class OpenAICompatJudge(Judge):
         if choices:
             text = (choices[0].get("message") or {}).get("content", "") or ""
         return RawCompletion(text, data.get("model", self.model), ms)
+
+    def identity_record(self) -> dict[str, object]:
+        return {
+            **super().identity_record(),
+            "model": self.model,
+            "base_url": self.base_url,
+        }
 
 
 class AnthropicJudge(Judge):
@@ -210,10 +221,8 @@ class AnthropicJudge(Judge):
         max_tokens: int = 1024,
         **kwargs,
     ) -> None:
-        super().__init__(
-            max_retries=kwargs.pop("max_retries", 1),
-            backoff=kwargs.pop("backoff", 1.5),
-        )
+        self.transport_retries = kwargs.pop("max_retries", 3)
+        super().__init__(max_retries=1, backoff=kwargs.pop("backoff", 1.5))
         self.model = model
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self.timeout = timeout
@@ -239,7 +248,8 @@ class AnthropicJudge(Judge):
             payload,
             headers,
             self.timeout,
-            max_retries=self.max_retries,
+            max_retries=self.transport_retries,
+            backoff=self.backoff,
         )
         ms = (time.perf_counter() - t0) * 1000
         if err:
@@ -247,6 +257,13 @@ class AnthropicJudge(Judge):
         content = data.get("content") or []
         text = "".join(c.get("text", "") for c in content if c.get("type") == "text")
         return RawCompletion(text, data.get("model", self.model), ms)
+
+    def identity_record(self) -> dict[str, object]:
+        return {
+            **super().identity_record(),
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+        }
 
 
 __all__ = ["OllamaJudge", "OpenAICompatJudge", "AnthropicJudge", "_post", "redact_secrets"]

@@ -169,8 +169,9 @@ def write_report(
     lines += [
         "## Notes",
         "",
-        "- p-values are item-cluster permutation tests (each item's total discordance "
-        "is one cluster; direction is randomized under the null). See `stats.STATS_REVIEW_NOTE`.",
+        "- p-values are item-cluster permutation tests (each item's signed `b-c` "
+        "discrepancy is one cluster; its sign is randomized under the null). See "
+        "`stats.STATS_REVIEW_NOTE`.",
         "- p_adj is Holm–Bonferroni across the confirmatory hypotheses in this run only.",
         "- **Noise floor** in the table is the *wrong-direction self-flip rate*: how often the "
         "judge flips a correct verdict to a wrong one between two identical, unperturbed "

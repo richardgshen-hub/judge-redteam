@@ -7,7 +7,7 @@ Direction decomposition: **net bias = P(correct→wrong) − P(wrong→correct)*
 | field | value |
 |---|---|
 | run id | `demo` |
-| generated (UTC) | 2026-09-04T16:38:23+00:00 |
+| generated (UTC) | 2026-09-04T17:15:00+00:00 |
 | items | 150 |
 | axes | position, length, authority, format, verbose_cot, abstention, self_preference, length_matched_control |
 | replicates per condition | 5 |
@@ -35,18 +35,18 @@ Direction decomposition: **net bias = P(correct→wrong) − P(wrong→correct)*
 
 | Axis | Hyp | pairs | items | acc base | acc pert | P(→wrong) | P(→right) | flips | net bias | Cohen h | 95% CI | p | p_adj | noise ▸wrong | verdict |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---|
-| `position` | H1 | 695 | 150 | 95.9% | 77.1% | 22.2% | 3.2% | 25.3% | +0.190 | +0.622 | [+0.155, +0.226] | 0.0001 | 0.0007 | 2.8% | systematic bias confirmed |
-| `length` | H2 | 684 | 150 | 84.2% | 75.0% | 18.4% | 9.6% | 28.1% | +0.088 | +0.255 | [+0.045, +0.130] | 0.0001 | 0.0007 | 12.4% | systematic bias confirmed |
-| `authority` | H3 | 685 | 150 | 84.9% | 67.9% | 22.8% | 6.4% | 29.2% | +0.164 | +0.482 | [+0.126, +0.202] | 0.0001 | 0.0007 | 9.8% | systematic bias confirmed |
-| `format` | H4 | 692 | 150 | 81.7% | 71.5% | 20.2% | 10.3% | 30.5% | +0.100 | +0.281 | [+0.058, +0.143] | 0.0001 | 0.0007 | 9.7% | systematic bias confirmed |
-| `verbose_cot` | H5 | 679 | 150 | 85.3% | 43.9% | 44.8% | 4.0% | 48.7% | +0.408 | +1.065 | [+0.364, +0.452] | 0.0001 | 0.0007 | 10.6% | systematic bias confirmed |
-| `abstention` | H6 | 674 | 150 | 88.3% | 70.5% | 23.4% | 5.3% | 28.8% | +0.181 | +0.544 | [+0.138, +0.224] | 0.0001 | 0.0007 | 10.0% | systematic bias confirmed |
-| `self_preference` | H7 | 680 | 150 | 84.6% | 63.4% | 27.4% | 7.1% | 34.4% | +0.203 | +0.563 | [+0.160, +0.246] | 0.0001 | 0.0007 | 11.7% | systematic bias confirmed |
-| `length_matched_control` | H5-control | 686 | 150 | 85.8% | 74.9% | 19.4% | 8.2% | 27.6% | +0.112 | +0.332 | [+0.072, +0.154] | 0.0001 | 0.0001 | 8.7% | systematic bias confirmed |
+| `position` | H1 | 695 | 150 | 95.9% | 77.1% | 22.2% | 3.2% | 25.3% | +0.190 | +0.622 | [+0.517, +0.731] | 0.0001 | 0.0007 | 2.8% | systematic bias confirmed |
+| `length` | H2 | 684 | 150 | 84.2% | 75.0% | 18.4% | 9.6% | 28.1% | +0.088 | +0.255 | [+0.132, +0.380] | 0.0003 | 0.0007 | 12.4% | systematic bias confirmed |
+| `authority` | H3 | 685 | 150 | 84.9% | 67.9% | 22.8% | 6.4% | 29.2% | +0.164 | +0.482 | [+0.377, +0.592] | 0.0001 | 0.0007 | 9.8% | systematic bias confirmed |
+| `format` | H4 | 692 | 150 | 81.7% | 71.5% | 20.2% | 10.3% | 30.5% | +0.100 | +0.281 | [+0.164, +0.401] | 0.0001 | 0.0007 | 9.7% | systematic bias confirmed |
+| `verbose_cot` | H5 | 679 | 150 | 85.3% | 43.9% | 44.8% | 4.0% | 48.7% | +0.408 | +1.065 | [+0.952, +1.183] | 0.0001 | 0.0007 | 10.6% | systematic bias confirmed |
+| `abstention` | H6 | 674 | 150 | 88.3% | 70.5% | 23.4% | 5.3% | 28.8% | +0.181 | +0.544 | [+0.427, +0.664] | 0.0001 | 0.0007 | 10.0% | systematic bias confirmed |
+| `self_preference` | H7 | 680 | 150 | 84.6% | 63.4% | 27.4% | 7.1% | 34.4% | +0.203 | +0.563 | [+0.447, +0.680] | 0.0001 | 0.0007 | 11.7% | systematic bias confirmed |
+| `length_matched_control` | H5-control | 686 | 150 | 85.8% | 74.9% | 19.4% | 8.2% | 27.6% | +0.112 | +0.332 | [+0.214, +0.455] | 0.0001 | 0.0001 | 8.7% | systematic bias confirmed |
 
 ## Notes
 
-- p-values are item-cluster permutation tests (each item's total discordance is one cluster; direction is randomized under the null). See `stats.STATS_REVIEW_NOTE`.
+- p-values are item-cluster permutation tests (each item's signed `b-c` discrepancy is one cluster; its sign is randomized under the null). See `stats.STATS_REVIEW_NOTE`.
 - p_adj is Holm–Bonferroni across the confirmatory hypotheses in this run only.
 - **Noise floor** in the table is the *wrong-direction self-flip rate*: how often the judge flips a correct verdict to a wrong one between two identical, unperturbed repeats (noise_a vs noise_b). A perturbation is only called a finding when its own P(correct→wrong) clearly exceeds this baseline.
 - The *total* self-disagreement rate (any flip, either direction) is larger and is recorded separately in the JSON summary as `noise_self_disagreement`; it is not used for the above-noise decision.

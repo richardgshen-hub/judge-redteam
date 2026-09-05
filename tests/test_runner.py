@@ -61,6 +61,19 @@ def test_run_id_changes_when_config_changes(tmp_path):
     assert e1.name != e2.name
 
 
+def test_axis_order_is_part_of_run_identity(tmp_path):
+    e1 = _exp(tmp_path, axes=("length", "authority"))
+    e2 = _exp(tmp_path, axes=("authority", "length"))
+    assert e1.name != e2.name
+
+
+def test_trial_construction_is_idempotent(tmp_path):
+    e = _exp(tmp_path, axes=("authority", "format"))
+    first = e.build_trials()
+    second = e.build_trials()
+    assert first == second
+
+
 def test_explicit_run_name_is_preserved(tmp_path):
     e = _exp(tmp_path, run_name="my-run")
     assert e.name == "my-run"
@@ -81,6 +94,17 @@ def test_resume_restores_without_duplication(tmp_path):
 
     all_j = e2.load_judgments()
     assert len(all_j) == total, "resumed run must not duplicate or lose rows"
+
+
+def test_resume_preserves_original_created_timestamp(tmp_path):
+    e1 = _exp(tmp_path)
+    e1.run(verbose=False)
+    original = e1.load_manifest().created_utc
+
+    e2 = _exp(tmp_path)
+    e2.manifest.created_utc = "2099-01-01T00:00:00+00:00"
+    e2.run(verbose=False)
+    assert e2.load_manifest().created_utc == original
 
 
 def test_resume_rejects_config_change(tmp_path):
@@ -151,7 +175,7 @@ def test_manifest_records_identity(tmp_path):
     assert m.run_id == e.name
     assert m.items_sha256 == e.items_sha256
     assert m.items_count > 0
-    assert m.config["axes"] == ["format", "length"]
+    assert m.config["axes"] == ["length", "format"]
     assert m.schema >= 1
 
 
@@ -164,3 +188,36 @@ def test_manifest_refuses_mixed_when_seed_differs(tmp_path):
     m2 = e2.manifest
     diffs = m1.diff(m2)
     assert any("seed" in d for d in diffs)
+
+
+def test_manifest_refuses_different_judge_identity(tmp_path):
+    cfg = RunConfig(
+        items_path=ITEMS_PATH,
+        axes=("length",),
+        reps=1,
+        output_dir=str(tmp_path),
+        run_name="shared",
+    )
+    e1 = Experiment(cfg, [SimulatedJudge(name="sim", family="Family A")])
+    e1.run(verbose=False)
+    e2 = Experiment(cfg, [SimulatedJudge(name="sim", family="Family B")])
+    with pytest.raises(ConfigConflict):
+        e2.run(verbose=False)
+
+
+def test_manifest_refuses_different_code_commit(tmp_path):
+    e1 = _exp(tmp_path, run_name="shared")
+    e1.run(verbose=False)
+
+    e2 = _exp(tmp_path, run_name="shared")
+    e2.manifest.code_commit = "different-commit"
+    with pytest.raises(ConfigConflict, match="code commit"):
+        e2.run(verbose=False)
+
+
+def test_each_completed_call_is_flushed_and_fsynced(tmp_path, monkeypatch):
+    e = _exp(tmp_path, axes=("length",), reps=1)
+    calls = []
+    monkeypatch.setattr(os, "fsync", lambda fd: calls.append(fd))
+    out = e.run(verbose=False)
+    assert len(calls) >= len(out)

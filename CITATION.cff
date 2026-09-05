@@ -4,9 +4,9 @@ title: "judge-redteam: auditing LLM-as-judge bias under controlled perturbation"
 authors:
   - family-names: Shen
     given-names: Richard
-    orcid: "https://github.com/richardgshen-hub"
+    alias: richardgshen-hub
 version: 0.2.0
-date-released: "2026-08-30"
+date-released: "2026-09-05"
 license: MIT
 repository-code: "https://github.com/richardgshen-hub/judge-redteam"
 abstract: >-
