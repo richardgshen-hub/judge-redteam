@@ -1,13 +1,13 @@
 # judge-redteam results — `demo`
 
-Direction decomposition: **net bias = P(correct→wrong) − P(wrong→correct)**. Zero means the perturbation only adds noise; positive means it steers the judge away from ground truth.
+Direction decomposition: **net bias = P(correct→wrong) − P(wrong→correct)**. Zero indicates no net directional change; positive values indicate more correct-to-wrong than wrong-to-correct flips.
 
 ## Harness disclosure
 
 | field | value |
 |---|---|
 | run id | `demo` |
-| generated (UTC) | 2026-09-04T17:15:00+00:00 |
+| generated (UTC) | 2026-09-05T09:58:57+00:00 |
 | items | 150 |
 | axes | position, length, authority, format, verbose_cot, abstention, self_preference, length_matched_control |
 | replicates per condition | 5 |
@@ -47,10 +47,11 @@ Direction decomposition: **net bias = P(correct→wrong) − P(wrong→correct)*
 ## Notes
 
 - p-values are item-cluster permutation tests (each item's signed `b-c` discrepancy is one cluster; its sign is randomized under the null). See `stats.STATS_REVIEW_NOTE`.
-- p_adj is Holm–Bonferroni across the confirmatory hypotheses in this run only.
+- p_adj is Holm–Bonferroni across the confirmatory hypotheses in this run only. For the exploratory H5 control this column contains its unadjusted p-value.
+- Effect-size intervals are unadjusted 95% item-cluster bootstrap intervals for Cohen's h; they are not simultaneous intervals across hypotheses.
 - **Noise floor** in the table is the *wrong-direction self-flip rate*: how often the judge flips a correct verdict to a wrong one between two identical, unperturbed repeats (noise_a vs noise_b). A perturbation is only called a finding when its own P(correct→wrong) clearly exceeds this baseline.
 - The *total* self-disagreement rate (any flip, either direction) is larger and is recorded separately in the JSON summary as `noise_self_disagreement`; it is not used for the above-noise decision.
 - **Exclusions are not silent.** PARSE_FAIL verdicts (which include refusals with no parseable verdict), TIE verdicts, and transport-errored calls are excluded from the paired analysis and counted in *Response quality* above; every raw response is preserved in the run's `*_raw.jsonl`. `pairs` counts paired scorable trials; `items` is the number of distinct items (the effective sample size for inference).
-- An axis flagged *below noise floor* flipped fewer verdicts toward wrong than the judge does on its own; it is not reported as a finding even if p < alpha.
+- An axis flagged *below noise floor* did not clear the noise-floor gate: the paired item-level interval did not sit entirely above zero. This also covers imprecise positive differences; it does not necessarily mean the observed wrong-flip rate is lower. Such an axis is not a finding even if p < alpha.
 - Null results carry the same weight as positive ones and are retained.
 - **Reminder: any run against a simulated judge demonstrates the reporting pipeline only and is not evidence about any real model.**

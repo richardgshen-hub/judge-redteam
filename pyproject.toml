@@ -19,6 +19,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.4"]
+viz = ["matplotlib>=3.8,<4"]
 
 [project.urls]
 Repository = "https://github.com/richardgshen-hub/judge-redteam"

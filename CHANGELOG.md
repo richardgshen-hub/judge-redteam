@@ -9,6 +9,16 @@ Hardening release: research prototype → structured, reproducible harness.
 All changes below were made **before any real-model data collection**; no real
 model results exist in this repository.
 
+### Report figures
+
+- Added source-backed effect-size intervals, directional-flip comparisons,
+  item-length balance and a protocol diagram in SVG and PNG, with portrait
+  variants for narrow screens and downloadable JSON/CSV values.
+- Added optional `.[viz]` dependencies, `demo.py --figures`, a standalone figure
+  renderer and CI export checks. The core remains standard-library only.
+- Refined README/report claims and added a Chinese project guide. Simulated
+  outcomes, unadjusted intervals and the exploratory H5 control are explicit.
+
 ### Fixed
 
 - **Run identity & resume.** `Experiment.name` no longer recomputes a timestamp

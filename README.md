@@ -1,57 +1,55 @@
 # judge-redteam
 
+[English](README.md) · [中文导读](docs/README.zh-CN.md) · [Worked report](results/demo_report.md) · [Figure guide](docs/FIGURES.md)
+
 [![CI](https://github.com/richardgshen-hub/judge-redteam/actions/workflows/ci.yml/badge.svg)](https://github.com/richardgshen-hub/judge-redteam/actions/workflows/ci.yml)
 
-LLM-as-judge is everywhere — RLHF pipelines, agent benchmarks, data curation — and nobody audits the auditor. This repo is a preregistered harness that applies controlled surface-form, metadata, and behavioral interventions to answers, then measures whether an LLM judge is steered away from ground truth. **Status: the instrument is built, calibrated on simulated judges, and unit-tested (90 tests + CI); real-model experiments have not been run yet, so this repo contains no conclusions about any real model.**
+An audit harness for LLM judges: apply controlled changes to answer presentation, metadata, and behavior, then measure whether judgments move away from ground truth. The repository records its hypotheses and protocol before real-model experiments, with subsequent changes in a dated deviations log.
 
-> **Read this first:** every number currently in this repository comes from a
-> *simulated* judge with deliberately injectable bias. They demonstrate that the
-> measurement pipeline works. They are **not** findings about GPT, Claude,
-> Qwen, or any other model.
+**Status:** implemented, tested, and calibrated on simulated judges. Real-model experiments and independent statistical review are pending.
+
+> **Simulation only.** The demonstration results below come from a simulated
+> judge with deliberately injected biases. They exercise the measurement and
+> reporting pipeline; they are not findings about GPT, Claude, Qwen, or any
+> other real model.
+
+## Visual results
+
+The same simulated run is shown in two views: the size of each directional effect, and the flips that produce it. All seven hypotheses remain visible alongside the exploratory H5 length-matched control.
+
+<picture>
+  <source media="(max-width: 700px)" srcset="docs/figures/demo/effect_sizes_mobile.svg">
+  <img src="docs/figures/demo/effect_sizes.svg" alt="Simulated effect sizes for seven hypotheses and the H5 control, with 95 percent item-cluster bootstrap confidence intervals.">
+</picture>
+
+*Points show Cohen's h; intervals are unadjusted 95% item-cluster bootstrap intervals. Positive values indicate more correct-to-wrong than wrong-to-correct flips. The H5 control is exploratory and excluded from the seven-hypothesis Holm correction.*
+
+<picture>
+  <source media="(max-width: 700px)" srcset="docs/figures/demo/directional_flips_mobile.svg">
+  <img src="docs/figures/demo/directional_flips.svg" alt="Simulated correct-to-wrong and wrong-to-correct flip rates compared with each axis's unperturbed wrong-direction noise baseline.">
+</picture>
+
+*Flip rates use paired scorable trials as their denominator. Noise markers are descriptive correct-to-wrong rates between identical unperturbed repeats; the noise-floor decision uses a paired item-level bootstrap, not the visual distance between markers.*
+
+[Full report](results/demo_report.md) · [Figure source JSON](docs/figures/demo/source.json) · [Results table CSV](docs/figures/demo/axis_results.csv) · [Figure methods and regeneration](docs/FIGURES.md)
 
 ---
 
 ## How it works
 
-```
-                 ┌──────────────────────────────────────────────┐
-                 │ 150-item balanced pool (5 domains)           │
-                 │ length/digit-balanced by construction        │
-                 └──────────────────┬───────────────────────────┘
-                                    ▼
-        ┌───────────────────────────────────────────────────────┐
-        │ for each item × axis: build a PAIRED presentation     │
-        │   base        = neutral presentation                  │
-        │   perturbed   = presentation + one perturbation       │
-        │   noise_a/b   = two identical unperturbed repeats     │
-        └──────────────────────────┬────────────────────────────┘
-                                   ▼
-        ┌───────────────────────────────────────────────────────┐
-        │ judge scores every presentation, R replicates each,   │
-        │ every verdict persisted + fsynced (crash-safe resume) │
-        └──────────────────────────┬────────────────────────────┘
-                                   ▼
-        ┌───────────────────────────────────────────────────────┐
-        │ direction decomposition per item:                     │
-        │   net_bias = P(correct→wrong) − P(wrong→correct)      │
-        │ item-cluster permutation test + noise-floor gate      │
-        └──────────────────────────┬────────────────────────────┘
-                                   ▼
-        ┌───────────────────────────────────────────────────────┐
-        │ report: effect sizes, CIs, Holm-adjusted p,           │
-        │ effective sample size, exclusions, disclosure card    │
-        └───────────────────────────────────────────────────────┘
-```
+![Experiment flow: items, paired interventions and noise controls, judge calls, item-cluster inference, report.](docs/figures/demo/protocol.svg)
+
+The pool contains 150 constructed items, with 30 in each of five domains. This describes its composition; independent item validation is still pending.
 
 Two design decisions carry most of the weight:
 
-**1. Direction, not disagreement.** A noisy judge disagrees with itself constantly under no perturbation at all, symmetrically — so raw disagreement rates are meaningless. Every flip is decomposed:
+**1. Measure the direction of disagreement.** A judge can disagree with itself even when the prompt is unchanged. Total disagreement alone cannot tell us whether a perturbation systematically worsens judgments. Every flip is decomposed:
 
 ```
 net_bias = P(base correct ∧ perturbed wrong) − P(base wrong ∧ perturbed correct)
 ```
 
-Pure noise gives `net_bias = 0`. A positive `net_bias` that clears the noise floor means the perturbation is *steering* the judge, not merely destabilising it. The noise floor itself is the judge's own **wrong-direction self-flip rate** between two identical unperturbed repeats — and an axis below that floor is reported as *not detected*, never as a finding, even if p < α.
+Zero `net_bias` indicates no net directional change in the observed pairs. Positive values mean more correct-to-wrong than wrong-to-correct flips. A finding must pass the corrected significance test and the noise-floor gate: a paired item-level bootstrap must place the excess wrong-direction flip rate above zero relative to identical unperturbed repeats. An axis that does not clear this gate is not reported as a finding, even if p < α.
 
 **2. The item is the analysis unit.** R replicate calls on the same question are correlated observations, not R independent facts. The significance test keeps each item's observed net directional discrepancy (`b-c`) together and randomly flips its sign (`stats.cluster_permutation_p`), so a judge tested with 5 replicates does not get 5× the statistical confidence. This method is simulation-calibrated (false-positive rate, power, correlated replicates) but **not yet reviewed by a statistician** — see `stats.STATS_REVIEW_NOTE`.
 
@@ -59,7 +57,7 @@ Pure noise gives `net_bias = 0`. A positive `net_bias` that clears the noise flo
 
 ## The seven hypotheses
 
-Preregistered in [PREREGISTRATION.md](PREREGISTRATION.md) before any data collection. Original numbering retained; v0.2 reclassified two of them to match what they actually manipulate (logged in [DEVIATIONS.md](DEVIATIONS.md) amendments 5–6).
+Recorded in [PREREGISTRATION.md](PREREGISTRATION.md) before real-model data collection; external preregistration is still on the roadmap. Original numbering is retained. v0.2 reclassified two hypotheses to match what they actually manipulate (logged in [DEVIATIONS.md](DEVIATIONS.md) amendments 5–6).
 
 | ID | Axis | Category | Manipulation |
 |----|------|----------|--------------|
@@ -71,7 +69,7 @@ Preregistered in [PREREGISTRATION.md](PREREGISTRATION.md) before any data collec
 | H6 | `abstention` | **behavioral** | Replace the **correct** answer with a calibrated "I don't know" |
 | H7 | `self_preference` | **metadata** | Tag the **wrong** answer with the judge's own model-family source label |
 
-- **H5 is load-bearing**: if extended reasoning makes a *wrong* answer score higher, test-time scaling is degrading evaluation, not just generation. It ships with a length-matched ablation control, because a longer chain-of-thought is necessarily longer — without the control, a positive H5 could be length bias in a reasoning costume.
+- **H5 tests fluent but invalid reasoning**: does a long, logically inert reasoning chain sway judgments? A length-matched ablation control helps distinguish the reasoning presentation from added length. This intervention does not directly test model test-time scaling.
 - **H6 is a behavioral intervention, not a surface perturbation**: it changes what counts as "correct" (calibrated abstention beats confident fabrication). It measures abstention robustness.
 - **H7 is attribution / identity-label bias, not true self-preference**: the judge never sees its own outputs — only a `[source: …]` provenance tag. It measures whether a labelled source sways verdicts.
 
@@ -79,26 +77,13 @@ Preregistered in [PREREGISTRATION.md](PREREGISTRATION.md) before any data collec
 
 ## Calibration
 
-A bias detector that has never recovered a known bias is an opinion generator. `scripts/selfcheck.py` runs both directions against simulated judges:
+`scripts/selfcheck.py` checks both false positives without injected bias and sensitivity with known injected bias. These are simulated calibration checks, not an estimate of performance on real judges.
 
-```
-$ python3 scripts/selfcheck.py          # ~40s, no network
-
-CONDITION A — judge with NO injected bias (false-positive control)
-  [PASS] unbiased judge / position: no false positive     net_bias=-0.006 p_adj=1.000
-  ... (all 8 axes silent)
-  [PASS] family-wise false positive rate under zero bias  0/24 = 0.0%
-         (calibrated-test acceptance region at alpha=0.05: <= 3/24)
-
-CONDITION B — judge WITH injected bias (sensitivity control)
-  [PASS] biased judge / position: bias recovered   net_bias=+0.250 h=+0.752 p_adj=0.0007
-  [PASS] biased judge / verbose_cot: bias recovered  net_bias=+0.398 h=+1.048 p_adj=0.0007
-  [PASS] H5 ablation: reasoning structure beats length alone  delta +0.283
-
-28/28 checks passed
+```bash
+python3 scripts/selfcheck.py          # no network or API key
 ```
 
-The FPR gate deserves a note: with 24 tests at α = 0.05, a *perfectly* calibrated test produces two false positives about a third of the time, so the gate uses the binomial acceptance region (≤ 3/24), not a point estimate. A gate that flaky would test the gate, not the instrument.
+The checks cover neutral and deliberately biased judges, multiple random seeds, and the H5 length-matched comparison. The finite seeded checks are useful regression safeguards; passing them is not proof of general calibration or a measured real-world false-positive rate. See the command output for the current results.
 
 ---
 
@@ -113,10 +98,27 @@ python3 -m pip install -e ".[dev]"
 python3 scripts/demo.py                                      # end-to-end, no API key, ~6s
 python3 scripts/validate_items.py data/items.jsonl --strict  # confound gate on the item pool
 python3 scripts/selfcheck.py                                 # instrument calibration
-python3 -m pytest tests/ -q                                  # 90 tests
+python3 -m pytest tests/ -q                                  # automated tests
 ```
 
 `demo.py` runs against a judge with deliberately injected bias: full reporting path (tables, effect sizes, noise floor, disclosure card) at zero cost. Its output describes the simulated judge, not any real model.
+
+### Optional report figures
+
+The experiment and text reports remain standard-library only. Install the optional visualization dependencies to generate the static charts used on GitHub:
+
+```bash
+python3 -m pip install -e ".[viz]"
+python3 scripts/demo.py --figures
+```
+
+To regenerate the published figures directly from their saved source, without running a judge:
+
+```bash
+python3 scripts/render_figures.py --summary docs/figures/demo/source.json --items data/items.jsonl --output docs/figures/demo
+```
+
+See [Figure methods and regeneration](docs/FIGURES.md) for the data provenance, captions, and exported files.
 
 ### Running real judges
 
@@ -155,11 +157,11 @@ Every judgment is persisted (and fsynced) as it completes; re-running the same c
 - [ ] 10% human audit of the item pool / perturbation outputs (committed in the protocol, not done)
 - [ ] External review of the statistical method (cluster permutation + noise-floor gate)
 - [ ] External preregistration (OSF or similar) before the real-model run
-- [ ] Item pool growth toward small-effect sensitivity (h ≈ 0.15, ~250 items)
+- [ ] Grow the item pool toward small-effect sensitivity, setting its size with the updated item-level power simulation
 
 ## Related work
 
-Real, clickable, and worth reading — both document judge biases that motivate the direction-decomposed design:
+These studies document judge biases that motivate the direction-decomposed design:
 
 - Zheng, Lian et al. (2023). [Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena](https://arxiv.org/abs/2306.05685). NeurIPS 2023 Datasets & Benchmarks. Documents position bias and verbosity bias in LLM judges.
 - Wang, Peiyi et al. (2023). [Large Language Models are not Fair Evaluators](https://arxiv.org/abs/2305.17926). Documents how the order of presented answers skews LLM evaluation.
@@ -169,7 +171,7 @@ This repo differs from both in that it is a preregistered *audit protocol* with 
 ## Layout
 
 ```
-PREREGISTRATION.md   hypotheses, protocol, statistics — locked before data collection
+PREREGISTRATION.md   hypotheses, protocol, statistics — recorded before real-model runs
 DEVIATIONS.md        dated log of departures from the above (8 amendments so far)
 src/jrt/
   types.py           data structures; ground truth is per-presentation, not per-candidate
@@ -182,8 +184,10 @@ src/jrt/
   report.py          results tables, per-template breakdown, disclosure card
 data/raw/<domain>.jsonl  item sources, one file per domain; independent audit pending
 data/items.jsonl         the assembled 150-item pool (do not hand-edit)
+docs/FIGURES.md       figure definitions, provenance, and regeneration
+docs/figures/demo/    static charts, portable source JSON, and CSV results
 scripts/             build_pool / validate_items / selfcheck / power_analysis /
-                     run_experiment / generate_items / demo
+                     run_experiment / generate_items / demo / render_figures
 ```
 
 ## Disclosure commitments

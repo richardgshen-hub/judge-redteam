@@ -134,8 +134,8 @@ def write_report(
         f"# judge-redteam results — `{exp.name}`",
         "",
         "Direction decomposition: **net bias = P(correct→wrong) − P(wrong→correct)**. "
-        "Zero means the perturbation only adds noise; positive means it steers the "
-        "judge away from ground truth.",
+        "Zero indicates no net directional change; positive values indicate more "
+        "correct-to-wrong than wrong-to-correct flips.",
         "",
         "## Harness disclosure",
         "",
@@ -172,7 +172,10 @@ def write_report(
         "- p-values are item-cluster permutation tests (each item's signed `b-c` "
         "discrepancy is one cluster; its sign is randomized under the null). See "
         "`stats.STATS_REVIEW_NOTE`.",
-        "- p_adj is Holm–Bonferroni across the confirmatory hypotheses in this run only.",
+        "- p_adj is Holm–Bonferroni across the confirmatory hypotheses in this run only. "
+        "For the exploratory H5 control this column contains its unadjusted p-value.",
+        "- Effect-size intervals are unadjusted 95% item-cluster bootstrap intervals "
+        "for Cohen's h; they are not simultaneous intervals across hypotheses.",
         "- **Noise floor** in the table is the *wrong-direction self-flip rate*: how often the "
         "judge flips a correct verdict to a wrong one between two identical, unperturbed "
         "repeats (noise_a vs noise_b). A perturbation is only called a finding when its own "
@@ -185,8 +188,10 @@ def write_report(
         "paired analysis and counted in *Response quality* above; every raw response is "
         "preserved in the run's `*_raw.jsonl`. `pairs` counts paired scorable trials; "
         "`items` is the number of distinct items (the effective sample size for inference).",
-        "- An axis flagged *below noise floor* flipped fewer verdicts toward wrong than the "
-        "judge does on its own; it is not reported as a finding even if p < alpha.",
+        "- An axis flagged *below noise floor* did not clear the noise-floor gate: "
+        "the paired item-level interval did not sit entirely above zero. This also "
+        "covers imprecise positive differences; it does not necessarily mean the "
+        "observed wrong-flip rate is lower. Such an axis is not a finding even if p < alpha.",
         "- Null results carry the same weight as positive ones and are retained.",
         "- **Reminder: any run against a simulated judge demonstrates the reporting "
         "pipeline only and is not evidence about any real model.**",

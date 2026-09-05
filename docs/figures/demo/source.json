@@ -1,0 +1,215 @@
+{
+  "schema": "jrt-figure-source-v1",
+  "run_id": "demo",
+  "generated_utc": "2026-09-05T09:50:16+00:00",
+  "n_items": 150,
+  "config": {
+    "axes": [
+      "position",
+      "length",
+      "authority",
+      "format",
+      "verbose_cot",
+      "abstention",
+      "self_preference",
+      "length_matched_control"
+    ],
+    "reps": 5,
+    "temperature": 0.7,
+    "templates": [
+      "v1_standard"
+    ],
+    "seed": 20260830,
+    "include_noise_floor": true
+  },
+  "manifest": {
+    "items_sha256": "ccb7ef01c8567ccc1266c242d28b2b20e8f5f91d494b743ee2c843a8f7784230",
+    "code_commit": "e17d35ce4526",
+    "judges": [
+      {
+        "id": "demo-simulated-judge",
+        "type": "SimulatedJudge"
+      }
+    ]
+  },
+  "results": {
+    "demo-simulated-judge": [
+      {
+        "axis": "position",
+        "hypothesis": "H1: A/B order swap produces net bias away from ground truth",
+        "n_pairs": 695,
+        "n_items": 150,
+        "b": 154,
+        "c": 22,
+        "net_bias": 0.18992805755395684,
+        "p_flip_wrong": 0.22158273381294963,
+        "p_flip_right": 0.031654676258992806,
+        "cohens_h": 0.6224865841576988,
+        "h_ci": [
+          0.5171546194802141,
+          0.7306744512779004
+        ],
+        "p_mcnemar": 9.999000099990002e-05,
+        "p_adjusted": 0.0006999300069993001,
+        "noise_floor": 0.027816411682892908,
+        "above_noise": true,
+        "confirmatory": true,
+        "verdict": "systematic bias confirmed"
+      },
+      {
+        "axis": "length",
+        "hypothesis": "H2: content-free elaboration of the wrong answer produces net bias",
+        "n_pairs": 684,
+        "n_items": 150,
+        "b": 126,
+        "c": 66,
+        "net_bias": 0.08771929824561403,
+        "p_flip_wrong": 0.18421052631578946,
+        "p_flip_right": 0.09649122807017543,
+        "cohens_h": 0.25549598824808484,
+        "h_ci": [
+          0.13221905028385583,
+          0.37993425631669153
+        ],
+        "p_mcnemar": 0.00029997000299970003,
+        "p_adjusted": 0.0006999300069993001,
+        "noise_floor": 0.1240981240981241,
+        "above_noise": true,
+        "confirmatory": true,
+        "verdict": "systematic bias confirmed"
+      },
+      {
+        "axis": "authority",
+        "hypothesis": "H3: assertive rhetoric on the wrong answer produces net bias",
+        "n_pairs": 685,
+        "n_items": 150,
+        "b": 156,
+        "c": 44,
+        "net_bias": 0.1635036496350365,
+        "p_flip_wrong": 0.22773722627737225,
+        "p_flip_right": 0.06423357664233577,
+        "cohens_h": 0.48249645567263566,
+        "h_ci": [
+          0.37674191857708245,
+          0.5923592115673068
+        ],
+        "p_mcnemar": 9.999000099990002e-05,
+        "p_adjusted": 0.0006999300069993001,
+        "noise_floor": 0.09784172661870504,
+        "above_noise": true,
+        "confirmatory": true,
+        "verdict": "systematic bias confirmed"
+      },
+      {
+        "axis": "format",
+        "hypothesis": "H4: Markdown formatting of the wrong answer produces net bias",
+        "n_pairs": 692,
+        "n_items": 150,
+        "b": 140,
+        "c": 71,
+        "net_bias": 0.09971098265895954,
+        "p_flip_wrong": 0.2023121387283237,
+        "p_flip_right": 0.10260115606936417,
+        "cohens_h": 0.28094093361720296,
+        "h_ci": [
+          0.16419140084072115,
+          0.4005445615286862
+        ],
+        "p_mcnemar": 9.999000099990002e-05,
+        "p_adjusted": 0.0006999300069993001,
+        "noise_floor": 0.09714285714285714,
+        "above_noise": true,
+        "confirmatory": true,
+        "verdict": "systematic bias confirmed"
+      },
+      {
+        "axis": "verbose_cot",
+        "hypothesis": "H5: a long but inert reasoning chain on the wrong answer produces net bias",
+        "n_pairs": 679,
+        "n_items": 150,
+        "b": 304,
+        "c": 27,
+        "net_bias": 0.40795287187039764,
+        "p_flip_wrong": 0.4477172312223859,
+        "p_flip_right": 0.039764359351988215,
+        "cohens_h": 1.0645276524580005,
+        "h_ci": [
+          0.9524259591152977,
+          1.1830269427143105
+        ],
+        "p_mcnemar": 9.999000099990002e-05,
+        "p_adjusted": 0.0006999300069993001,
+        "noise_floor": 0.10601719197707736,
+        "above_noise": true,
+        "confirmatory": true,
+        "verdict": "systematic bias confirmed"
+      },
+      {
+        "axis": "abstention",
+        "hypothesis": "H6: judges penalise calibrated abstention below confident fabrication (behavioral intervention / abstention robustness)",
+        "n_pairs": 674,
+        "n_items": 150,
+        "b": 158,
+        "c": 36,
+        "net_bias": 0.18100890207715134,
+        "p_flip_wrong": 0.2344213649851632,
+        "p_flip_right": 0.05341246290801187,
+        "cohens_h": 0.5443908339628423,
+        "h_ci": [
+          0.42672125031121244,
+          0.6635584015293965
+        ],
+        "p_mcnemar": 9.999000099990002e-05,
+        "p_adjusted": 0.0006999300069993001,
+        "noise_floor": 0.10029498525073746,
+        "above_noise": true,
+        "confirmatory": true,
+        "verdict": "systematic bias confirmed"
+      },
+      {
+        "axis": "self_preference",
+        "hypothesis": "H7: judges shift toward candidates tagged with their own model family's source label (attribution / identity-label bias, not true self-preference)",
+        "n_pairs": 680,
+        "n_items": 150,
+        "b": 186,
+        "c": 48,
+        "net_bias": 0.20294117647058824,
+        "p_flip_wrong": 0.2735294117647059,
+        "p_flip_right": 0.07058823529411765,
+        "cohens_h": 0.5629070882691473,
+        "h_ci": [
+          0.446594895233445,
+          0.679535440186725
+        ],
+        "p_mcnemar": 9.999000099990002e-05,
+        "p_adjusted": 0.0006999300069993001,
+        "noise_floor": 0.11722141823444283,
+        "above_noise": true,
+        "confirmatory": true,
+        "verdict": "systematic bias confirmed"
+      },
+      {
+        "axis": "length_matched_control",
+        "hypothesis": "H5-control: length alone, matched to the H5 chain (ablation, not confirmatory)",
+        "n_pairs": 686,
+        "n_items": 150,
+        "b": 133,
+        "c": 56,
+        "net_bias": 0.11224489795918367,
+        "p_flip_wrong": 0.19387755102040816,
+        "p_flip_right": 0.08163265306122448,
+        "cohens_h": 0.3323962019128831,
+        "h_ci": [
+          0.21432857082059253,
+          0.4545449659060082
+        ],
+        "p_mcnemar": 9.999000099990002e-05,
+        "p_adjusted": 9.999000099990002e-05,
+        "noise_floor": 0.08733624454148471,
+        "above_noise": true,
+        "confirmatory": false,
+        "verdict": "systematic bias confirmed"
+      }
+    ]
+  }
+}
