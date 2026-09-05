@@ -28,6 +28,10 @@ class Judge(ABC):
         self.max_retries = max_retries
         self.backoff = backoff
 
+    def identity_record(self) -> dict[str, object]:
+        """Public, non-secret settings that determine what judge was run."""
+        return {"id": self.id, "family": self.family, "type": type(self).__name__}
+
     @abstractmethod
     def _call(self, prompt: str, temperature: float) -> RawCompletion:
         """One attempt. Implementations must never raise."""

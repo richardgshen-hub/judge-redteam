@@ -1,0 +1,71 @@
+# Changelog
+
+All notable changes to this project are documented here.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [0.2.0] — 2026-09-05
+
+Hardening release: research prototype → structured, reproducible harness.
+All changes below were made **before any real-model data collection**; no real
+model results exist in this repository.
+
+### Report figures
+
+- Added source-backed effect-size intervals, directional-flip comparisons,
+  item-length balance and a protocol diagram in SVG and PNG, with portrait
+  variants for narrow screens and downloadable JSON/CSV values.
+- Added optional `.[viz]` dependencies, `demo.py --figures`, a standalone figure
+  renderer and CI export checks. The core remains standard-library only.
+- Refined README/report claims and added a Chinese project guide. Simulated
+  outcomes, unadjusted intervals and the exploratory H5 control are explicit.
+
+### Fixed
+
+- **Run identity & resume.** `Experiment.name` no longer recomputes a timestamp
+  on every access. Run ids are computed once from a content fingerprint
+  (config + item-set hash + judges), a manifest is written before data
+  collection, and resuming refuses to mix two different experiments
+  (`ConfigConflict`). SIGINT interrupts flush and fsync; truncated final lines
+  and double-written rows are tolerated and de-duplicated.
+- **Statistics.** The headline test is now an item-cluster permutation test
+  (`cluster_permutation_p`) instead of an exact McNemar on pooled discordant
+  counts, which treated correlated replicates of one item as independent.
+  Simulation tests cover null false-positive rate, power under known bias, and
+  perfectly-correlated replicates. Method is flagged as not yet
+  statistician-reviewed (`stats.STATS_REVIEW_NOTE`).
+- **Audit corrections.** The permutation statistic now sign-flips each item's
+  observed `(b-c)` discrepancy (balanced within-item flips contribute zero),
+  and the bootstrap interval reported beside Cohen's h is computed on Cohen's
+  h rather than net bias.
+- **Deterministic construction.** Repeated calls to `build_trials()` are
+  idempotent, axis ordering is part of the run identity, and judge identity
+  records include non-secret backend settings.
+- **Noise floor.** `noise_floor` now specifically means the *wrong-direction
+  self-flip rate*; the total self-disagreement rate is reported separately
+  (`noise_self_disagreement`) and is not used for verdicts. Significant results
+  below the noise floor can no longer be reported as findings.
+- **Hypothesis naming.** H6 reclassified as a behavioral intervention
+  (abstention robustness); H7 reclassified as attribution / identity-label bias
+  (metadata) rather than true self-preference. Taxonomy recorded in
+  `axes.AXIS_TAXONOMY`; both changes logged as DEVIATIONS.md amendments 5–6.
+
+### Added
+
+- HTTP transport hardening: capped exponential backoff on 429/5xx/timeouts,
+  fail-fast on auth errors and malformed bodies, API-key redaction in persisted
+  error strings, injectable sleep for deterministic tests.
+- CI (GitHub Actions): tests on Python 3.10–3.13, strict data gate, demo smoke
+  test, and focused static correctness checks.
+- MIT `LICENSE`, `CITATION.cff`, `CONTRIBUTING.md`, this changelog.
+- Test suite expanded to 90 checks covering run identity/resume, statistics,
+  axes/taxonomy, HTTP transport, and end-to-end behavior.
+
+## [0.1.0] — 2026-08-30
+
+- Preregistered protocol, 150-item balanced pool (length-balanced by
+  construction after discarding a confounded 40-item pilot — see DEVIATIONS.md
+  amendments 1–4).
+- Eight perturbation axes (H1–H7 confirmatory + length-matched ablation
+  control), three prompt templates, simulated and HTTP judge backends.
+- Direction-decomposed reporting (net bias = P(correct→wrong) −
+  P(wrong→correct)) with a simulated-noise-floor comparison.

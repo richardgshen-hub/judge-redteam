@@ -1,6 +1,7 @@
 # Deviations from preregistration
 
-Empty as of 2026-08-30.
+No real-model outcome data have been collected as of 2026-09-05. The amendments
+below were recorded during instrument design and hardening.
 
 Every entry records:
 
@@ -89,6 +90,100 @@ sitting at the exact centre of a method whose entire claim is separating bias fr
 variance. An ad-hoc constant there undermines every verdict downstream of it.
 
 **Timing:** before outcome data existed.
+
+## Amendment 5 (2026-08-30, v0.2 hardening) — recorded before any real-judge data collection
+
+**Changed:** two statistical-protocol fixes.
+
+1. The headline significance test changed from an exact McNemar on the pooled
+   (B, C) discordant totals to an **item-cluster permutation test**
+   (`stats.cluster_permutation_p`). Each item's observed signed discrepancy
+   `(b_i-c_i)` is one cluster; under H0 its sign is randomised.
+2. The noise-floor definition was unified: `noise_floor` now specifically means
+   the **wrong-direction self-flip rate** (P(correct→wrong) between two identical
+   unperturbed repeats), the baseline a real effect must beat. The *total*
+   self-disagreement rate is kept separately as `noise_self_disagreement` and is
+   not used for the above-noise decision.
+
+**Why:** (1) the pooled test treated the R correlated replicate calls of one item
+as R independent flips, inflating significance — exactly the failure a
+replicate-based design invites. Simulation (tests/test_stats.py) shows the pooled
+test rejects far above its nominal rate on clustered data while the cluster test
+stays calibrated. (2) The report displayed the total disagreement rate while the
+verdict compared wrong-direction rates, so the reader could not see what was
+being compared.
+
+**Status:** the cluster-permutation method is simulation-calibrated (null FPR,
+known-bias power, perfectly-correlated replicates) but has **not been reviewed by
+a statistician**; see `stats.STATS_REVIEW_NOTE`. Real-model findings are
+provisional pending that review.
+
+**Timing:** before outcome data existed. Only simulated-calibration (instrument)
+runs had ever been executed.
+
+## Amendment 6 (2026-08-30, v0.2 hardening) — recorded before any real-judge data collection
+
+**Changed:** two hypotheses were reclassified to match what they actually
+manipulate. Original numbering (H1–H7) is retained.
+
+- **H6 (`abstention`) → behavioral intervention / abstention robustness.** It
+  replaces the correct candidate with a calibrated "I don't know", which changes
+  *what counts as correct* — a behavioral intervention, not a surface-form
+  perturbation. It is no longer described as a pure presentation effect.
+- **H7 (`self_preference`) → attribution / identity-label bias (metadata).** The
+  manipulation adds a `[source: <family>]` provenance tag; it does not present
+  the judge with its own outputs. It measures whether a labelled source sways the
+  verdict, not self-recognition, and is no longer described as true
+  self-preference.
+
+A taxonomy (`axes.AXIS_TAXONOMY`, surfaced in the README) now classifies every
+axis: H1–H5 surface-form, H6 behavioral, H7 metadata.
+
+**Why:** naming a hypothesis what it cannot support is how overclaiming happens.
+A reader seeing "self-preference confirmed" would reasonably conclude the judge
+recognises its own outputs — a claim this design makes no measurement of.
+
+**Timing:** before outcome data existed.
+
+## Amendment 7 (2026-08-30, v0.2 hardening) — recorded before any real-judge data collection
+
+**Changed:** the selfcheck's false-positive gate criterion, from a point-estimate
+threshold (rejection rate ≤ 5%) to the acceptance region of
+Binom(n_tests, alpha) at 95% confidence (≤ 3 rejections out of 24 at α = 0.05).
+
+**Why:** the old gate was statistically incoherent. With 24 tests at α = 0.05, a
+*perfectly* calibrated test produces two or more false positives about a third of
+the time — the gate failed its own instrument for reasons that had nothing to do
+with calibration. A gate that flaky measures the gate, not the instrument. After
+the switch to item-cluster inference (Amendment 5), the unbiased simulated judge
+showed 2/24 = 8.3%, inside the acceptance region, with all eight primary-seed
+family-wise tests silent.
+
+**Timing:** before outcome data existed.
+
+## Amendment 8 (2026-09-05, independent audit) — recorded before any real-judge data collection
+
+**Changed:** three correctness fixes found during an independent pre-publication
+code review.
+
+1. The item-cluster permutation statistic now sign-flips each item's observed
+   `(b_i-c_i)` discrepancy. The initial v0.2 implementation incorrectly
+   sign-flipped `(b_i+c_i)`, so an item with equal wrong- and right-direction
+   flips could contribute a non-zero signal.
+2. The bootstrap interval shown beside Cohen's `h` is now calculated on
+   Cohen's `h`; the initial implementation calculated a net-bias interval but
+   labelled it as an effect-size interval.
+3. The power analysis now uses a conservative item-cluster model rather than
+   treating replicates as independent. The v0.1 numerical power claims remain
+   in the locked preregistration as historical context but are retired for
+   future real-model claims.
+
+**Why:** all three issues could overstate or mislabel statistical evidence. A
+pre-publication audit is useful only if it changes the code before outcome data
+exist, rather than explaining the problem away after results are visible.
+
+**Timing:** before any real-model data collection. Only simulated judges were
+used to find and verify these corrections.
 
 ## Template
 

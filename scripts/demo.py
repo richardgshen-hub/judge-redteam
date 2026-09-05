@@ -9,8 +9,10 @@ Run:  python scripts/demo.py
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
@@ -22,8 +24,8 @@ from jrt.stats import AxisResult  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Chosen to sit near the detection threshold so the report shows a realistic mix,
-# including one axis that falls below the noise floor.
+# Known injected biases exercise the report. Their apparent strengths are
+# properties of this simulation, not estimates for any real model.
 PROFILE = BiasProfile(
     competence=0.65,
     competence_spread=0.22,
@@ -39,6 +41,9 @@ PROFILE = BiasProfile(
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--figures", action="store_true", help="Also render SVG/PNG report figures (requires .[viz])")
+    args = parser.parse_args()
     judge = SimulatedJudge(profile=PROFILE, seed=20260830, name="demo-simulated-judge")
     cfg = RunConfig(
         items_path=os.path.join(ROOT, "data", "items.jsonl"),
@@ -56,6 +61,10 @@ def main() -> int:
     analyses: dict[str, list[AxisResult]] = exp.analyse(judgments)
     summary = exp.write_summary(analyses)
     report = write_report(exp, analyses, os.path.join(ROOT, "results", "demo_report.md"), judgments)
+    if args.figures:
+        from jrt.figures import render_figures
+
+        render_figures(Path(summary), Path(cfg.items_path), Path(ROOT) / "docs/figures/demo", report_path=Path(report))
 
     print()
     for judge_id, results in analyses.items():

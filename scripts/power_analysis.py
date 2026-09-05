@@ -4,15 +4,16 @@ Two questions get answered:
   1. How many items are needed to detect a given effect at 80% power?
   2. With the items we actually have, what is the smallest effect we can detect?
 
-Both are answered by Monte Carlo over the test statistic itself, not by a
-normal approximation, because McNemar on small discordant counts is not normal.
+Both are answered by Monte Carlo under a conservative item-cluster model:
+replicates of an active item move together, so five calls on one question do
+not count as five independent facts. The resulting exact sign test is the
+equal-weight special case of the headline item-cluster permutation test.
 
 Run:  python scripts/power_analysis.py
 """
 
 from __future__ import annotations
 
-import math
 import os
 import random
 import sys
@@ -59,13 +60,26 @@ def power_at(
     delta = delta_for_h(effect_h, noise_floor)
     p_wrong = (noise_floor + delta) / 2
     p_right = (noise_floor - delta) / 2
-    trials = n_items * reps
+    # Conservative cluster model: an item's replicates are perfectly correlated.
+    # `reps` affects the precision of its observed rate, not the number of
+    # independent experimental units, so the sign test has n_items trials.
+    del reps
+    trials = n_items
     threshold = alpha / m  # Holm is at least as powerful as Bonferroni
     rng = random.Random(seed)
     hits = 0
     for _ in range(n_sims):
-        b = rng.binomialvariate(trials, p_wrong)
-        c = rng.binomialvariate(trials, p_right)
+        # Draw the three mutually exclusive item outcomes directly. This works
+        # on every supported Python version and cannot count one item in both
+        # flip directions, as two independent binomial draws could.
+        b = c = 0
+        cut_right = p_wrong + p_right
+        for _item in range(trials):
+            u = rng.random()
+            if u < p_wrong:
+                b += 1
+            elif u < cut_right:
+                c += 1
         if mcnemar_exact(b, c) < threshold:
             hits += 1
     return hits / n_sims
@@ -123,7 +137,7 @@ def main() -> int:
     for n in (40, 80, 120, 200, 300):
         print(f"   | {n} | {power_at(0.2, n, 5):.1%} |")
 
-    current = 40
+    current = 150
     mde = min_detectable_h(current, 5)
     print()
     print(

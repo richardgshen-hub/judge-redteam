@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "judge-redteam: auditing LLM-as-judge bias under controlled perturbation"
+authors:
+  - family-names: Shen
+    given-names: Richard
+    alias: richardgshen-hub
+version: 0.2.0
+date-released: "2026-09-05"
+license: MIT
+repository-code: "https://github.com/richardgshen-hub/judge-redteam"
+abstract: >-
+  A preregistered harness for measuring systematic bias in LLM-as-judge
+  evaluations. Seven perturbation axes (position, length, authority, format,
+  verbose chain-of-thought, abstention, source attribution) are applied to
+  balanced item pools; paired base/perturbed conditions with replicates and an
+  unperturbed noise floor separate genuine directional bias from sampling and
+  self-disagreement noise. Inference is item-cluster aware.
+keywords:
+  - llm-as-judge
+  - evaluation
+  - bias
+  - preregistration
+  - reward-hacking

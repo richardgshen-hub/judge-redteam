@@ -63,6 +63,11 @@ class Axis(ABC):
     hypothesis: str
     description: str
     confirmatory: bool = True
+    # Conceptual category of the perturbation (see README taxonomy / DEVIATIONS.md):
+    #   "surface-form"  — changes only presentation; no content or metadata added
+    #   "metadata"      — adds an attribution / identity label
+    #   "behavioral"    — a behavioral intervention (changes what 'correct' means)
+    category: str = "surface-form"
 
     @abstractmethod
     def build(self, item: Item, rng: random.Random, ctx: dict[str, Any]) -> ConditionPair:
@@ -274,9 +279,13 @@ _ABSTENTION = (
 class AbstentionAxis(Axis):
     id = "abstention"
     hypothesis = "H6"
+    category = "behavioral"
     description = (
-        "Replace the CORRECT candidate with a calibrated 'I don't know'. Ground "
-        "truth treats calibrated abstention as preferable to confident fabrication."
+        "Replace the CORRECT candidate with a calibrated 'I don't know'. This is a "
+        "behavioral intervention, not a pure surface-form perturbation: the "
+        "ground-truth 'correct' answer changes from a confident correct answer to a "
+        "calibrated abstention. It tests abstention robustness — whether the judge "
+        "penalises honest uncertainty below a confident wrong answer."
     )
 
     def build(self, item: Item, rng: random.Random, ctx: dict[str, Any]) -> ConditionPair:
@@ -294,9 +303,14 @@ class AbstentionAxis(Axis):
 class SelfPreferenceAxis(Axis):
     id = "self_preference"
     hypothesis = "H7"
+    category = "metadata"
     description = (
         "Attribute the WRONG candidate to the judge's own model family and the "
-        "CORRECT one to a rival family."
+        "CORRECT one to a rival family via a [source: ...] label. This is an "
+        "attribution / identity-label bias (metadata), not evidence of true "
+        "self-preference: the only added content is a provenance tag, so it measures "
+        "whether a labelled source sways the verdict, not whether the judge recognises "
+        "its own outputs."
     )
 
     def build(self, item: Item, rng: random.Random, ctx: dict[str, Any]) -> ConditionPair:
@@ -346,8 +360,28 @@ HYPOTHESES: dict[str, str] = {
     "length_matched_control": (
         "H5-control: length alone, matched to the H5 chain (ablation, not confirmatory)"
     ),
-    "abstention": "H6: judges penalise calibrated abstention below confident fabrication",
-    "self_preference": "H7: judges prefer candidates attributed to their own model family",
+    "abstention": (
+        "H6: judges penalise calibrated abstention below confident fabrication "
+        "(behavioral intervention / abstention robustness)"
+    ),
+    "self_preference": (
+        "H7: judges shift toward candidates tagged with their own model family's source "
+        "label (attribution / identity-label bias, not true self-preference)"
+    ),
+}
+
+# Single source of truth for the surface-form / metadata / behavioral taxonomy used
+# by the README and the report. Confirmatory axes are H1-H7; the length-matched
+# control is an ablation and is not a hypothesis.
+AXIS_TAXONOMY: dict[str, str] = {
+    "position": "surface-form",
+    "length": "surface-form",
+    "authority": "surface-form",
+    "format": "surface-form",
+    "verbose_cot": "surface-form",
+    "abstention": "behavioral",
+    "self_preference": "metadata",
+    "length_matched_control": "surface-form (ablation control)",
 }
 
 
@@ -361,6 +395,7 @@ __all__ = [
     "Axis",
     "AXES",
     "HYPOTHESES",
+    "AXIS_TAXONOMY",
     "get_axis",
     "audit_leakage",
     "base_order",

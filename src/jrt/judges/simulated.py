@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 import random
 import time
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 
 from ..types import Presentation
 from .base import Judge, RawCompletion
@@ -103,10 +103,18 @@ class SimulatedJudge(Judge):
     ) -> None:
         super().__init__(**kwargs)
         self.profile = profile or BiasProfile()
+        self.seed = seed
         self._rng = random.Random(seed)
         self.id = name or type(self).id
         self.family = family
         self._own_family = family
+
+    def identity_record(self) -> dict[str, object]:
+        return {
+            **super().identity_record(),
+            "seed": self.seed,
+            "profile": asdict(self.profile),
+        }
 
     def _item_competence(self, question: str) -> float:
         """Per-item discrimination ability, derived deterministically from the question.

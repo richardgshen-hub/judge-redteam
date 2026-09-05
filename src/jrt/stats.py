@@ -3,9 +3,37 @@
 Everything here is pure-Python and seeded, so results are bit-reproducible and
 the whole module is unit-testable without any model access. That is deliberate:
 the statistics must be verifiable independently of the judges.
+
+Analysis unit
+-------------
+The preregistered analysis unit is the *item*, not the replicate. Item i is
+scored with R replicate calls (same question, temperature > 0). Those R verdicts
+are correlated observations of one thing, not R independent facts. Any inference
+that resamples individual verdicts or feeds the pooled (B, C) discordant counts
+into a plain McNemar test overstates confidence, because it treats R correlated
+rows as R independent rows.
+
+The headline test therefore resamples whole items (clusters) and recomputes the
+signed discrepancy each time. See `cluster_permutation_p` and `summarise_axis`.
+
+Open review
+-----------
+The cluster-permutation test is implemented and simulation-calibrated (see
+tests/test_stats.py), but the method has NOT been signed off by a statistician.
+STATS_REVIEW_NOTE below records exactly what is proven and what is not. Treat
+any real-model finding as provisional until a stats reviewer has looked at it.
 """
 
 from __future__ import annotations
+
+# What is proven by simulation vs what still needs a human statistician.
+# Kept here so the README and the report can cite the same single source.
+STATS_REVIEW_NOTE = (
+    "Cluster-permutation inference (item-level resampling) is simulation-calibrated "
+    "for false-positive rate under the null, for power under a known bias, and for "
+    "perfectly-correlated replicates. It has NOT been formally reviewed by a "
+    "statistician; real-model findings are provisional pending that review."
+)
 
 import math
 import random
@@ -112,6 +140,45 @@ def paired_bootstrap_diff_ci(
     return (lo, hi)
 
 
+def cluster_permutation_p(
+    cells: Sequence[PairedOutcome],
+    n_resample: int = 10_000,
+    seed: int = 20260830,
+) -> tuple[float, int]:
+    """Item-cluster-aware permutation test of net directional bias.
+
+    The analysis unit is the *item*, not the replicate. The R replicate calls of
+    one item are correlated, so they do not supply R independent flips. We keep
+    each item's observed signed discrepancy (b_i - c_i) as one cluster and
+    randomly flip that cluster's sign under the null. A balanced item with
+    b_i == c_i therefore contributes zero, as it must.
+
+    Under H0 there is no systematic direction bias, so the observed signed
+    discrepancy D = sum_i (b_i - c_i) should be typical of the sign-permuted
+    distribution. p is the fraction of permutations at least as
+    extreme, with a +1 / (n+1) correction.
+
+    Returns (p_value, observed_signed_discrepancy).
+    """
+    if not cells:
+        return 1.0, 0
+    deltas = [c.b - c.c for c in cells]
+    if not any(deltas):
+        return 1.0, 0
+    d_obs = sum(deltas)
+    rng = random.Random(seed)
+    k = len(cells)
+    count = 0
+    for _ in range(n_resample):
+        d = 0
+        for i in range(k):
+            s = 1 if rng.random() < 0.5 else -1
+            d += s * deltas[i]
+        if abs(d) >= abs(d_obs):
+            count += 1
+    return (count + 1) / (n_resample + 1), d_obs
+
+
 # --------------------------------------------------------------------------
 # multiple comparisons
 # --------------------------------------------------------------------------
@@ -212,8 +279,10 @@ class AxisResult:
     p_mcnemar: float
     cohens_h: float
     h_ci: tuple[float, float]
+    n_items: int = 0
     meta: MetaResult | None = None
     noise_floor: float = 0.0
+    noise_self_disagreement: float = 0.0
     noise_ci: tuple[float, float] = (float("nan"), float("nan"))
     above_noise: bool | None = None
     p_adjusted: float = 1.0
@@ -237,30 +306,50 @@ def summarise_axis(
     unperturbed repeats. They establish the floor that a real effect must clear.
     """
     n = sum(x.n for x in cells)
+    n_items = len(cells)
     b = sum(x.b for x in cells)
     c = sum(x.c for x in cells)
     agg = PairedOutcome(n=n, b=b, c=c)
 
-    p = mcnemar_exact(b, c)
+    # Item-cluster-aware: resample whole items, not individual replicates, so the
+    # R correlated calls per item do not inflate significance. (Previously this
+    # fed the pooled (b, c) into mcnemar_exact, which assumes independence.)
+    p, _ = cluster_permutation_p(cells)
     h = cohens_h(agg.p_flip_wrong, agg.p_flip_right)
 
     clusters = [[1.0] * x.b + [-1.0] * x.c + [0.0] * (x.n - x.b - x.c) for x in cells]
-    h_ci = cluster_bootstrap_ci(clusters, lambda flat: sum(flat) / len(flat) if flat else 0.0)
+    def _h_from_flips(flat: list[float]) -> float:
+        if not flat:
+            return 0.0
+        return cohens_h(flat.count(1.0) / len(flat), flat.count(-1.0) / len(flat))
+
+    h_ci = cluster_bootstrap_ci(clusters, _h_from_flips)
 
     effects = [cohens_h(x.p_flip_wrong, x.p_flip_right) for x in cells if x.n > 0]
     variances = [cohens_h_var(x.n) for x in cells if x.n > 0]
     meta = dersimonian_laird(effects, variances)
 
     noise_floor = 0.0
+    noise_self_disagreement = 0.0
     noise_ci: tuple[float, float] = (float("nan"), float("nan"))
     above_noise: bool | None = None
     if noise_cells:
         nn = sum(x.n for x in noise_cells)
         nb = sum(x.b for x in noise_cells)
         nc = sum(x.c for x in noise_cells)
-        noise_floor = (nb + nc) / nn if nn else 0.0
+        # Two distinct quantities, reported separately so the reader knows which
+        # is being compared:
+        #   noise_floor            = wrong-direction self-flip rate (b/nn). This is
+        #                           the baseline rate at which the judge destroys a
+        #                           *correct* verdict with no perturbation. A real
+        #                           effect must push past THIS, not past the total.
+        #   noise_self_disagreement = total flip rate (b+c)/nn: the judge merely
+        #                           changes its mind between two identical prompts,
+        #                           in either direction. Informational only.
+        noise_floor = nb / nn if nn else 0.0
+        noise_self_disagreement = (nb + nc) / nn if nn else 0.0
 
-        # Is the perturbation worse than the judge's own self-disagreement?
+        # Is the perturbation worse than the judge's own wrong-direction rate?
         # Paired at item level: each item contributes a perturbed-condition
         # P(->wrong) and a noise-condition P(->wrong). If the bootstrap CI for
         # the difference sits entirely above zero, the perturbation destroys
@@ -276,18 +365,15 @@ def summarise_axis(
             noise_ci = paired_bootstrap_diff_ci(pairs, seed=20260831)
             above_noise = noise_ci[0] > 0.0
         else:
-            nclusters = [
-                [1.0] * x.b + [-1.0] * x.c + [0.0] * (x.n - x.b - x.c) for x in noise_cells
-            ]
-            noise_ci = cluster_bootstrap_ci(
-                nclusters, lambda flat: abs(sum(flat)) / len(flat) if flat else 0.0, seed=20260831
-            )
-            above_noise = agg.p_flip_wrong > noise_ci[1]
+            # No shared items: compare aggregate wrong-direction rates directly.
+            noise_ci = (noise_floor, noise_floor)
+            above_noise = agg.p_flip_wrong > noise_floor
 
     return AxisResult(
         axis=axis,
         hypothesis=hypothesis,
         n_pairs=n,
+        n_items=n_items,
         b=b,
         c=c,
         net_bias=agg.net_bias,
@@ -299,9 +385,11 @@ def summarise_axis(
         h_ci=h_ci,
         meta=meta,
         noise_floor=noise_floor,
+        noise_self_disagreement=noise_self_disagreement,
         noise_ci=noise_ci,
         above_noise=above_noise,
         confirmatory=confirmatory,
+        extra={"method": "cluster-permutation", "n_resample": 10_000},
     )
 
 
@@ -338,10 +426,12 @@ __all__ = [
     "cohens_h_var",
     "cluster_bootstrap_ci",
     "paired_bootstrap_diff_ci",
+    "cluster_permutation_p",
     "holm_bonferroni",
     "dersimonian_laird",
     "MetaResult",
     "AxisResult",
     "summarise_axis",
     "apply_correction",
+    "STATS_REVIEW_NOTE",
 ]
