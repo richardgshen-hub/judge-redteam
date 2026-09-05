@@ -1,7 +1,7 @@
 {
   "schema": "jrt-figure-source-v1",
   "run_id": "demo",
-  "generated_utc": "2026-09-05T09:50:16+00:00",
+  "generated_utc": "2026-09-05T11:19:02+00:00",
   "n_items": 150,
   "config": {
     "axes": [
@@ -23,8 +23,9 @@
     "include_noise_floor": true
   },
   "manifest": {
+    "schema": 3,
     "items_sha256": "ccb7ef01c8567ccc1266c242d28b2b20e8f5f91d494b743ee2c843a8f7784230",
-    "code_commit": "e17d35ce4526",
+    "code_commit": "a9862d0539aa",
     "judges": [
       {
         "id": "demo-simulated-judge",

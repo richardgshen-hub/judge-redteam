@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+
+      - name: Unit tests
+        run: python -m pytest -q
+
+      - name: Static correctness checks
+        run: python -m ruff check .
+
+      - name: Data gate (strict item validation)
+        run: python scripts/validate_items.py data/items.jsonl --strict
+
+      - name: Demo smoke test (simulated judge, no network)
+        run: python scripts/demo.py
+
+  figures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install optional figure tools
+        run: python -m pip install -e ".[dev,viz]"
+      - name: Verify figure data and export behavior
+        run: python -m pytest tests/test_figures.py tests/test_figure_provenance.py -q
+      - name: Rebuild published figures without model calls
+        run: python scripts/render_figures.py --summary docs/figures/demo/source.json --items data/items.jsonl --output "$RUNNER_TEMP/jrt-figures"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: report-figures
+          path: ${{ runner.temp }}/jrt-figures

@@ -2,12 +2,37 @@
 
 Direction decomposition: **net bias = P(correct→wrong) − P(wrong→correct)**. Zero indicates no net directional change; positive values indicate more correct-to-wrong than wrong-to-correct flips.
 
+<!-- jrt:figures:start -->
+## Visual analysis
+
+Read each figure's evidence label, selected judge and source data below.
+
+<picture>
+  <source media="(max-width: 600px)" srcset="../docs/figures/demo/effect_sizes_mobile.svg">
+  <img src="../docs/figures/demo/effect_sizes.svg" alt="Directional effect sizes with unadjusted 95% item-cluster bootstrap intervals; H5 length control is exploratory.">
+</picture>
+
+<picture>
+  <source media="(max-width: 600px)" srcset="../docs/figures/demo/directional_flips_mobile.svg">
+  <img src="../docs/figures/demo/directional_flips.svg" alt="Correct-to-wrong and wrong-to-correct flip rates with descriptive unperturbed noise references.">
+</picture>
+
+<picture>
+  <source media="(max-width: 600px)" srcset="../docs/figures/demo/item_pool_mobile.svg">
+  <img src="../docs/figures/demo/item_pool.svg" alt="Per-item answer-length gaps by domain; semantic validation remains pending.">
+</picture>
+
+[Figure data](../docs/figures/demo/source.json) · [Axis values (CSV)](../docs/figures/demo/axis_results.csv) · [Item values (CSV)](../docs/figures/demo/item_pool.csv)
+
+Intervals are unadjusted. Aggregate flip/noise rates are descriptive; the noise gate uses paired item-level differences. The exploratory H5 control is outside the seven-hypothesis Holm family.
+<!-- jrt:figures:end -->
+
 ## Harness disclosure
 
 | field | value |
 |---|---|
 | run id | `demo` |
-| generated (UTC) | 2026-09-05T09:58:57+00:00 |
+| generated (UTC) | 2026-09-05T11:19:02+00:00 |
 | items | 150 |
 | axes | position, length, authority, format, verbose_cot, abstention, self_preference, length_matched_control |
 | replicates per condition | 5 |

@@ -57,9 +57,15 @@ python scripts/render_figures.py \
 ```
 
 Pass `--judge EXACT_ID` if the summary contains multiple judges. Only that judge's
-results are rendered. The renderer refuses an item pool whose SHA-256 does not
-match the run manifest. `--report` replaces only the marked generated figure
-section and preserves the rest of an existing report. Running a report generator
+results are rendered, with its ID on every figure. Full summaries must use
+manifest schema 3: older versions used a different meaning for the interval
+field and cannot be safely relabelled. Configured axes with no scorable pairs
+remain visible as unavailable, and unavailable noise controls are not drawn as
+zero. The renderer refuses an item pool whose SHA-256 does not match the run
+manifest. Before embedding, it checks the report run, item hash, selected judge,
+pair counts, flip rates, effect sizes and interval values against the source.
+`--report` replaces only the marked generated figure section and preserves the
+rest of an existing report. Running a report generator
 again without `--figures` produces its normal text-only report.
 
 Each export contains four desktop SVGs, four portrait SVGs, four high-resolution
@@ -80,8 +86,10 @@ exports across machines.
 
 Figure tests cover source-field filtering, JSON-safe missing intervals, explicit
 multi-judge selection, mismatched item hashes, retained negative control effects,
-CSV values, export completeness, and repeatable report insertion. CI renders from
-the committed public snapshot and uploads the resulting figures as a build
-artifact. Visual review checks desktop and portrait labels, clipping, spacing,
+CSV values, export completeness, and repeatable report insertion. The prepared
+[automation template](ci.example.yml) renders from the public snapshot and uploads
+the resulting figures as a build artifact. It is stored under `docs/` and does
+not run automatically; installing it as `.github/workflows/ci.yml` is a separate
+publishing step pending GitHub workflow authorization. Visual review checks desktop and portrait labels, clipping, spacing,
 zero baselines, method notes and source labels. The statistical method still
 requires external expert review; attractive figures do not change that status.

@@ -1,0 +1,2 @@
+# Keep generated vector outlines out of source-code review and language totals.
+docs/figures/demo/*.svg linguist-generated=true
